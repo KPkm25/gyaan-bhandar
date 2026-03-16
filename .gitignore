@@ -1,0 +1,29 @@
+# Secrets
+backend/.env
+
+# Large model/index files — no need to push these
+backend/faiss.index
+backend/chunks.pkl
+backend/k8s_doc.pdf
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Node
+frontend/node_modules/
+frontend/build/
+
+# OS
+.DS_Store
+Thumbs.db
+```
+
+## 4. Create a `backend/.env.example` to push instead
+This tells teammates what variables are needed without exposing values:
+```
+GROQ_API_KEY=your_groq_key_here
+MODEL_PATH=path/to/all-MiniLM-L6-v2

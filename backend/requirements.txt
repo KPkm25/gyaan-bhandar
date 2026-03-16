@@ -1,0 +1,8 @@
+flask
+flask-cors
+requests
+faiss-cpu
+numpy
+sentence-transformers
+python-docx
+PyPDF2
