@@ -17,6 +17,12 @@ rag-app/
 
 ## Backend Setup
 
+### Create a `backend/.env`
+```
+GROQ_API_KEY=your_groq_key_here
+MODEL_PATH=path/to/all-MiniLM-L6-v2
+
+Install the dependencies and run the application
 ```bash
 cd backend
 pip install -r requirements.txt

@@ -22,7 +22,3 @@ frontend/build/
 Thumbs.db
 ```
 
-## 4. Create a `backend/.env`
-```
-GROQ_API_KEY=your_groq_key_here
-MODEL_PATH=path/to/all-MiniLM-L6-v2
