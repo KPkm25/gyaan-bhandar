@@ -1,11 +1,46 @@
 import { useState, useRef, useEffect } from "react";
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
+
 import "./App.css";
 
 const API_BASE = "http://localhost:5000";
 
-// ── Sub-components ──────────────────────────────────────────────
+// ── Copy button ───────────────────────────────────────────────
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false);
 
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <button className={`copy-btn ${copied ? "copy-btn--copied" : ""}`} onClick={handleCopy} title="Copy to clipboard">
+      {copied ? (
+        <>
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+            <path d="M2 7l3 3 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          Copied!
+        </>
+      ) : (
+        <>
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+            <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" stroke="currentColor" strokeWidth="1.3"/>
+            <path d="M8.5 4.5V3a.5.5 0 0 0-.5-.5H3A.5.5 0 0 0 2.5 3v5a.5.5 0 0 0 .5.5h1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+          </svg>
+          Copy
+        </>
+      )}
+    </button>
+  );
+}
+
+// ── Status badge ──────────────────────────────────────────────
 function StatusBadge({ health }) {
   return (
     <div className={`status-badge ${health ? "status-badge--online" : "status-badge--offline"}`}>
@@ -15,6 +50,7 @@ function StatusBadge({ health }) {
   );
 }
 
+// ── Source tag ────────────────────────────────────────────────
 function SourceTag({ source, page }) {
   const filename = source?.split(/[/\\]/).pop() || source;
   return (
@@ -30,6 +66,7 @@ function SourceTag({ source, page }) {
   );
 }
 
+// ── Chunk card ────────────────────────────────────────────────
 function ChunkCard({ chunk, index }) {
   const [expanded, setExpanded] = useState(false);
   const limit = 180;
@@ -54,6 +91,7 @@ function ChunkCard({ chunk, index }) {
   );
 }
 
+// ── Typing indicator ──────────────────────────────────────────
 function TypingDots() {
   return (
     <div className="message message--ai">
@@ -65,6 +103,7 @@ function TypingDots() {
   );
 }
 
+// ── Chat message ──────────────────────────────────────────────
 function ChatMessage({ msg }) {
   const isUser = msg.role === "user";
   return (
@@ -72,10 +111,41 @@ function ChatMessage({ msg }) {
       {!isUser && <div className="message__avatar">AI</div>}
       <div className="message__content">
         <div className={`message__bubble ${isUser ? "message__bubble--user" : "message__bubble--ai"}`}>
+          {isUser ? (
+            <p className="message__text">{msg.text}</p>
+          ) : (
           <div className="message__text">
-            <ReactMarkdown>{msg.text}</ReactMarkdown>
-          </div>        
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code({ node, inline, className, children, ...props }) {
+                  const code = String(children).replace(/\n$/, "");
+                  const isBlock = !inline && className?.startsWith("language-");
+
+                  if (!isBlock) {
+                    // inline code — plain styled span, no block treatment
+                    return <code className="inline-code" {...props}>{children}</code>;
+                  }
+
+                  return (
+                    <div className="code-block">
+                      <div className="code-block__header">
+                        <span className="code-block__lang">
+                          {className.replace("language-", "")}
+                        </span>
+                        <CopyButton text={code} />
+                      </div>
+                      <pre><code className={className} {...props}>{children}</code></pre>
+                    </div>
+                  );
+                }
+              }}
+            >{msg.text}</ReactMarkdown>
+          </div>
+          )}
+          {/* {!isUser && <CopyButton text={msg.text} />} */}
         </div>
+
         {msg.chunks && msg.chunks.length > 0 && (
           <div className="context-panel">
             <div className="context-panel__label">
@@ -98,8 +168,7 @@ function ChatMessage({ msg }) {
   );
 }
 
-// ── Main App ─────────────────────────────────────────────────────
-
+// ── Main App ──────────────────────────────────────────────────
 export default function App() {
   const [messages, setMessages] = useState([
     {
@@ -134,7 +203,6 @@ export default function App() {
   const send = async () => {
     const q = input.trim();
     if (!q || loading) return;
-
     setMessages((m) => [...m, { role: "user", text: q }]);
     setInput("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
@@ -170,7 +238,7 @@ export default function App() {
             </svg>
           </div>
           <div>
-            <h1 className="header__title">RAG Explorer</h1>
+            <h1 className="header__title">Gyaan Bhandar</h1>
             <p className="header__subtitle">FAISS · Groq · LLaMA 3.1</p>
           </div>
         </div>

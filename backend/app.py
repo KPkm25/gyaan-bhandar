@@ -132,7 +132,12 @@ def ask_groq(query, retrieved_chunks, model_name="llama-3.1-8b-instant"):
     payload = {
         "model": model_name,
         "messages": [
-            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "system", "content": (
+    "You are a helpful assistant. When answering, use clean markdown formatting. "
+    "When including code blocks inside numbered lists, always add a blank line before "
+    "and after the code fence, and do not indent the code fence itself. "
+    "Keep code blocks simple and avoid nesting them deeply inside list items."
+            )},
             {"role": "user", "content": prompt}
         ],
         "max_tokens": 500
