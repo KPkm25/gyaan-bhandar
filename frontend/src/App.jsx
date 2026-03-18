@@ -1,79 +1,63 @@
 import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
-
 import "./App.css";
 
 const API_BASE = "http://localhost:5000";
 
-// ── Copy button ───────────────────────────────────────────────
-function CopyButton({ text }) {
+// ── Copy Button ───────────────────────────────────────────────
+function CopyButton({ text, small = false }) {
   const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
+  const handle = () => {
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   };
-
   return (
-    <button className={`copy-btn ${copied ? "copy-btn--copied" : ""}`} onClick={handleCopy} title="Copy to clipboard">
+    <button className={`copy-btn ${small ? "copy-btn--small" : ""} ${copied ? "copy-btn--copied" : ""}`} onClick={handle} title="Copy">
       {copied ? (
         <>
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-            <path d="M2 7l3 3 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M2 6.5l2.5 2.5 5.5-5.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
-          Copied!
+          {!small && "Copied!"}
         </>
       ) : (
         <>
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-            <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" stroke="currentColor" strokeWidth="1.3"/>
-            <path d="M8.5 4.5V3a.5.5 0 0 0-.5-.5H3A.5.5 0 0 0 2.5 3v5a.5.5 0 0 0 .5.5h1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <rect x="4" y="4" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+            <path d="M8 4V2.5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5H4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
           </svg>
-          Copy
+          {!small && "Copy"}
         </>
       )}
     </button>
   );
 }
 
-// ── Status badge ──────────────────────────────────────────────
-function StatusBadge({ health }) {
-  return (
-    <div className={`status-badge ${health ? "status-badge--online" : "status-badge--offline"}`}>
-      <span className="status-pulse" />
-      {health ? `${health.chunks_loaded} chunks loaded` : "Backend offline"}
-    </div>
-  );
-}
-
-// ── Source tag ────────────────────────────────────────────────
+// ── Source Tag ────────────────────────────────────────────────
 function SourceTag({ source, page }) {
   const filename = source?.split(/[/\\]/).pop() || source;
   return (
     <span className="source-tag">
-      <svg width="11" height="13" viewBox="0 0 11 13" fill="none">
-        <path d="M1 1h6l3 3v8H1V1z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
-        <path d="M7 1v3h3" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
-        <path d="M3 6h5M3 8h4M3 10h3" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
+      <svg width="10" height="12" viewBox="0 0 10 12" fill="none">
+        <path d="M1 1h5.5l2.5 2.5V11H1V1z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+        <path d="M6 1v3h3" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
       </svg>
       {filename}
-      {page && <span className="source-tag__page">pg. {page}</span>}
+      {page && <span className="source-tag__page">p.{page}</span>}
     </span>
   );
 }
 
-// ── Chunk card ────────────────────────────────────────────────
+// ── Chunk Card ────────────────────────────────────────────────
 function ChunkCard({ chunk, index }) {
   const [expanded, setExpanded] = useState(false);
-  const limit = 180;
+  const limit = 160;
   const truncated = chunk.text.length > limit;
-
   return (
-    <div className="chunk-card" style={{ "--delay": `${index * 60}ms` }}>
+    <div className="chunk-card" style={{ "--delay": `${index * 55}ms` }}>
       <div className="chunk-card__header">
         <span className="chunk-card__index">#{String(index + 1).padStart(2, "0")}</span>
         <SourceTag source={chunk.source} page={chunk.page} />
@@ -84,14 +68,14 @@ function ChunkCard({ chunk, index }) {
       </p>
       {truncated && (
         <button className="chunk-card__toggle" onClick={() => setExpanded(!expanded)}>
-          {expanded ? "▲ collapse" : "▼ expand"}
+          {expanded ? "▲ less" : "▼ more"}
         </button>
       )}
     </div>
   );
 }
 
-// ── Typing indicator ──────────────────────────────────────────
+// ── Typing Dots ───────────────────────────────────────────────
 function TypingDots() {
   return (
     <div className="message message--ai">
@@ -103,7 +87,7 @@ function TypingDots() {
   );
 }
 
-// ── Chat message ──────────────────────────────────────────────
+// ── Chat Message ──────────────────────────────────────────────
 function ChatMessage({ msg }) {
   const isUser = msg.role === "user";
   return (
@@ -114,51 +98,44 @@ function ChatMessage({ msg }) {
           {isUser ? (
             <p className="message__text">{msg.text}</p>
           ) : (
-          <div className="message__text">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                code({ node, inline, className, children, ...props }) {
-                  const code = String(children).replace(/\n$/, "");
-                  const isBlock = !inline && className?.startsWith("language-");
-
-                  if (!isBlock) {
-                    // inline code — plain styled span, no block treatment
-                    return <code className="inline-code" {...props}>{children}</code>;
-                  }
-
-                  return (
-                    <div className="code-block">
-                      <div className="code-block__header">
-                        <span className="code-block__lang">
-                          {className.replace("language-", "")}
-                        </span>
-                        <CopyButton text={code} />
+            <div className="message__text">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  code({ node, inline, className, children, ...props }) {
+                    const code = String(children).replace(/\n$/, "");
+                    const isBlock = !inline && className?.startsWith("language-");
+                    if (!isBlock) {
+                      return <code className="inline-code" {...props}>{children}</code>;
+                    }
+                    return (
+                      <div className="code-block">
+                        <div className="code-block__header">
+                          <span className="code-block__lang">
+                            {className.replace("language-", "")}
+                          </span>
+                          <CopyButton text={code} small />
+                        </div>
+                        <pre><code className={className} {...props}>{children}</code></pre>
                       </div>
-                      <pre><code className={className} {...props}>{children}</code></pre>
-                    </div>
-                  );
-                }
-              }}
-            >{msg.text}</ReactMarkdown>
-          </div>
+                    );
+                  }
+                }}
+              >{msg.text}</ReactMarkdown>
+            </div>
           )}
-          {/* {!isUser && <CopyButton text={msg.text} />} */}
         </div>
-
         {msg.chunks && msg.chunks.length > 0 && (
           <div className="context-panel">
             <div className="context-panel__label">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.2"/>
-                <path d="M6 5v4M6 3.5v.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                <circle cx="5.5" cy="5.5" r="4.5" stroke="currentColor" strokeWidth="1.2"/>
+                <path d="M5.5 4.5v3M5.5 3.2v.3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
               </svg>
               Retrieved context
             </div>
             <div className="context-panel__chunks">
-              {msg.chunks.map((c, i) => (
-                <ChunkCard key={i} chunk={c} index={i} />
-              ))}
+              {msg.chunks.map((c, i) => <ChunkCard key={i} chunk={c} index={i} />)}
             </div>
           </div>
         )}
@@ -168,25 +145,204 @@ function ChatMessage({ msg }) {
   );
 }
 
+// ── Documents Panel ───────────────────────────────────────────
+function DocumentsPanel({ onIndexUpdated }) {
+  const [docs, setDocs] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const fileRef = useRef(null);
+
+  const fetchDocs = () => {
+    fetch(`${API_BASE}/documents`)
+      .then(r => r.json())
+      .then(setDocs)
+      .catch(() => {});
+  };
+
+  useEffect(() => { fetchDocs(); }, []);
+
+  const handleUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const res = await fetch(`${API_BASE}/upload`, { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) {
+        setUploadError(data.error || "Upload failed");
+      } else {
+        fetchDocs();
+        onIndexUpdated();
+      }
+    } catch {
+      setUploadError("Upload failed — is the backend running?");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const handleDelete = async (name) => {
+    if (!window.confirm(`Delete "${name}"?`)) return;
+    await fetch(`${API_BASE}/documents/${encodeURIComponent(name)}`, { method: "DELETE" });
+    fetchDocs();
+    onIndexUpdated();
+  };
+
+  return (
+    <div className={`docs-panel ${collapsed ? "docs-panel--collapsed" : ""}`}>
+      <div className="docs-panel__header" onClick={() => setCollapsed(!collapsed)}>
+        <span className="docs-panel__title">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+            <path d="M2 2h6l3 3v6H2V2z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+            <path d="M8 2v3h3" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+          </svg>
+          Documents
+          <span className="docs-panel__count">{docs.length}</span>
+        </span>
+        <div className="docs-panel__actions" onClick={e => e.stopPropagation()}>
+          <button
+            className="docs-panel__upload-btn"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? (
+              <span className="docs-panel__spinner" />
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M6 9V3M3 6l3-3 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
+            {uploading ? "Uploading…" : "Upload"}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".pdf,.txt,.docx"
+            style={{ display: "none" }}
+            onChange={handleUpload}
+          />
+        </div>
+        <svg className="docs-panel__chevron" width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path d="M3 4.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </div>
+
+      {!collapsed && (
+        <div className="docs-panel__body">
+          {uploadError && <p className="docs-panel__error">{uploadError}</p>}
+          {docs.length === 0 ? (
+            <p className="docs-panel__empty">No documents yet — upload a PDF, TXT, or DOCX</p>
+          ) : (
+            docs.map(doc => (
+              <div key={doc.name} className="docs-panel__item">
+                <div className="docs-panel__item-info">
+                  <span className="docs-panel__item-name">{doc.name}</span>
+                  <span className="docs-panel__item-meta">{doc.size_kb} KB · {doc.modified}</span>
+                </div>
+                <button className="docs-panel__delete" onClick={() => handleDelete(doc.name)} title="Delete">
+                  <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                    <path d="M2 2l7 7M9 2L2 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Sidebar ───────────────────────────────────────────────────
+function Sidebar({ sessions, activeSession, onNew, onLoad, onDelete }) {
+  return (
+    <div className="sidebar">
+      <div className="sidebar__brand">
+        <div className="sidebar__logo">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <circle cx="7.5" cy="7.5" r="5" stroke="currentColor" strokeWidth="1.8"/>
+            <path d="M11.5 11.5L16 16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+            <path d="M5 7.5h5M7.5 5v5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+          </svg>
+        </div>
+        <div>
+          <p className="sidebar__app-name">Gyaan Bhandar</p>
+          <p className="sidebar__app-sub">RAG Assistant</p>
+        </div>
+      </div>
+
+      <button className="sidebar__new-btn" onClick={onNew}>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+          <path d="M6.5 2v9M2 6.5h9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+        </svg>
+        New Chat
+      </button>
+
+      <p className="sidebar__section-label">Recent</p>
+
+      <div className="sidebar__list">
+        {sessions.length === 0 && (
+          <p className="sidebar__empty">No chats yet</p>
+        )}
+        {sessions.map(s => (
+          <div
+            key={s.id}
+            className={`sidebar__item ${activeSession?.id === s.id ? "sidebar__item--active" : ""}`}
+            onClick={() => onLoad(s)}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M1 2.5h10v7a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 1 9.5v-7z" stroke="currentColor" strokeWidth="1.2"/>
+              <path d="M4 2.5V1.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 .5.5v1" stroke="currentColor" strokeWidth="1.2"/>
+            </svg>
+            <span className="sidebar__item-title">{s.title}</span>
+            <button
+              className="sidebar__delete"
+              onClick={e => { e.stopPropagation(); onDelete(s.id); }}
+              title="Delete"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────
 export default function App() {
   const [messages, setMessages] = useState([
-    {
-      role: "ai",
-      text: "Hello! I'm your document assistant. Ask me anything about the loaded PDF and I'll retrieve the most relevant context to answer you.",
-    },
+    { role: "ai", text: "Hello! Upload a document and ask me anything about it." }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [health, setHealth] = useState(null);
+  const [sessions, setSessions] = useState([]);
+  const [activeSession, setActiveSession] = useState(null);
+
   const chatEndRef = useRef(null);
   const textareaRef = useRef(null);
 
-  useEffect(() => {
+  const refreshHealth = () => {
     fetch(`${API_BASE}/health`)
-      .then((r) => r.json())
+      .then(r => r.json())
       .then(setHealth)
       .catch(() => setHealth(null));
+  };
+
+  useEffect(() => {
+    refreshHealth();
+    fetch(`${API_BASE}/sessions`)
+      .then(r => r.json())
+      .then(setSessions)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -200,10 +356,53 @@ export default function App() {
     ta.style.height = Math.min(ta.scrollHeight, 160) + "px";
   };
 
+  const newSession = async () => {
+    const res = await fetch(`${API_BASE}/sessions`, { method: "POST" });
+    const session = await res.json();
+    setSessions(s => [session, ...s]);
+    setActiveSession(session);
+    setMessages([{ role: "ai", text: "New chat started! Ask me anything about your documents." }]);
+  };
+
+  const loadSession = async (session) => {
+    const res = await fetch(`${API_BASE}/sessions/${session.id}`);
+    const data = await res.json();
+    setActiveSession(data);
+    const restored = data.messages.flatMap(m => ([
+      { role: "user", text: m.user },
+      { role: "ai", text: m.assistant, chunks: m.chunks }
+    ]));
+    setMessages(
+      restored.length > 0
+        ? restored
+        : [{ role: "ai", text: "No messages in this session yet." }]
+    );
+  };
+
+  const deleteSession = async (sessionId) => {
+    await fetch(`${API_BASE}/sessions/${sessionId}`, { method: "DELETE" });
+    setSessions(s => s.filter(s => s.id !== sessionId));
+    if (activeSession?.id === sessionId) {
+      setActiveSession(null);
+      setMessages([{ role: "ai", text: "Hello! Upload a document and ask me anything about it." }]);
+    }
+  };
+
   const send = async () => {
     const q = input.trim();
     if (!q || loading) return;
-    setMessages((m) => [...m, { role: "user", text: q }]);
+
+    // Auto-create session if none active
+    let sessionId = activeSession?.id;
+    if (!sessionId) {
+      const res = await fetch(`${API_BASE}/sessions`, { method: "POST" });
+      const session = await res.json();
+      setSessions(s => [session, ...s]);
+      setActiveSession(session);
+      sessionId = session.id;
+    }
+
+    setMessages(m => [...m, { role: "user", text: q }]);
     setInput("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setLoading(true);
@@ -212,15 +411,22 @@ export default function App() {
       const res = await fetch(`${API_BASE}/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q }),
+        body: JSON.stringify({ query: q, session_id: sessionId })
       });
       const data = await res.json();
-      setMessages((m) => [...m, { role: "ai", text: data.answer, chunks: data.chunks }]);
+      if (!res.ok) {
+        setMessages(m => [...m, { role: "ai", text: `⚠️ ${data.error}` }]);
+      } else {
+        setMessages(m => [...m, { role: "ai", text: data.answer, chunks: data.chunks }]);
+        // Update session title in sidebar
+        setSessions(prev => prev.map(s =>
+          s.id === sessionId
+            ? { ...s, title: q.slice(0, 45) + (q.length > 45 ? "…" : "") }
+            : s
+        ));
+      }
     } catch {
-      setMessages((m) => [
-        ...m,
-        { role: "ai", text: "⚠️ Could not reach the backend. Make sure Flask is running on port 5000." },
-      ]);
+      setMessages(m => [...m, { role: "ai", text: "⚠️ Could not reach the backend. Make sure Flask is running on port 5000." }]);
     } finally {
       setLoading(false);
     }
@@ -228,59 +434,70 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="header">
-        <div className="header__brand">
-          <div className="header__logo">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.8"/>
-              <path d="M12.5 12.5L17 17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-              <path d="M5.5 8h5M8 5.5v5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-            </svg>
-          </div>
-          <div>
-            <h1 className="header__title">Gyaan Bhandar</h1>
-            <p className="header__subtitle">FAISS · Groq · LLaMA 3.1</p>
-          </div>
-        </div>
-        <StatusBadge health={health} />
-      </header>
+      <Sidebar
+        sessions={sessions}
+        activeSession={activeSession}
+        onNew={newSession}
+        onLoad={loadSession}
+        onDelete={deleteSession}
+      />
 
-      <main className="chat">
-        <div className="chat__inner">
-          {messages.map((m, i) => (
-            <ChatMessage key={i} msg={m} />
-          ))}
-          {loading && <TypingDots />}
-          <div ref={chatEndRef} />
-        </div>
-      </main>
+      <div className="chat-area">
+        <header className="header">
+          <div className="header__left">
+            <h1 className="header__title">
+              {activeSession?.title && activeSession.title !== "New Chat"
+                ? activeSession.title
+                : "Ask your documents"}
+            </h1>
+          </div>
+          <div className={`status-badge ${health ? "status-badge--online" : "status-badge--offline"}`}>
+            <span className="status-pulse" />
+            {health
+              ? `${health.chunks_loaded} chunks · ${health.documents} doc${health.documents !== 1 ? "s" : ""}`
+              : "Backend offline"}
+          </div>
+        </header>
 
-      <footer className="composer">
-        <div className="composer__box">
-          <textarea
-            ref={textareaRef}
-            className="composer__input"
-            rows={1}
-            value={input}
-            placeholder="Ask anything about the document…"
-            onChange={(e) => { setInput(e.target.value); autoResize(); }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-            }}
-          />
-          <button
-            className="composer__send"
-            onClick={send}
-            disabled={!input.trim() || loading}
-            aria-label="Send"
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <path d="M9 14V4M4 9l5-5 5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
-        </div>
-        <p className="composer__hint">Enter to send · Shift+Enter for new line</p>
-      </footer>
+        <DocumentsPanel onIndexUpdated={refreshHealth} />
+
+        <main className="chat">
+          <div className="chat__inner">
+            {messages.map((m, i) => <ChatMessage key={i} msg={m} />)}
+            {loading && <TypingDots />}
+            <div ref={chatEndRef} />
+          </div>
+        </main>
+
+        <footer className="composer">
+          <div className="composer__box">
+            <textarea
+              ref={textareaRef}
+              className="composer__input"
+              rows={1}
+              value={input}
+              placeholder={health?.chunks_loaded > 0
+                ? "Ask anything about your documents…"
+                : "Upload a document to get started…"}
+              onChange={e => { setInput(e.target.value); autoResize(); }}
+              onKeyDown={e => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+              }}
+            />
+            <button
+              className="composer__send"
+              onClick={send}
+              disabled={!input.trim() || loading}
+              aria-label="Send"
+            >
+              <svg width="17" height="17" viewBox="0 0 17 17" fill="none">
+                <path d="M8.5 13V4M4 8.5l4.5-4.5 4.5 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          </div>
+          <p className="composer__hint">Enter to send · Shift+Enter for new line</p>
+        </footer>
+      </div>
     </div>
   );
 }

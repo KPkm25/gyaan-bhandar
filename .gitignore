@@ -1,10 +1,17 @@
 # Secrets
 backend/.env
 
-# Large model/index files — no need to push these
+# Generated index files (rebuilt automatically on first run)
 backend/faiss.index
 backend/chunks.pkl
+backend/documents.hash
 backend/k8s_doc.pdf
+
+# Document uploads (kept locally, not in git)
+backend/documents/
+
+# Chat history (local only)
+backend/chat_history/
 
 # Python
 __pycache__/
@@ -12,6 +19,7 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+env/
 
 # Node
 frontend/node_modules/
@@ -20,5 +28,3 @@ frontend/build/
 # OS
 .DS_Store
 Thumbs.db
-```
-
