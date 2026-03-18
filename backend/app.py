@@ -15,6 +15,8 @@ import uuid
 import hashlib
 import PyPDF2
 from sentence_transformers import SentenceTransformer
+import re
+
 
 load_dotenv()
 
@@ -32,7 +34,7 @@ HISTORY_FOLDER   = "chat_history"
 INDEX_PATH       = "faiss.index"
 CHUNKS_PATH      = "chunks.pkl"
 HASH_PATH        = "documents.hash"
-ALLOWED_EXT      = {"pdf", "txt", "docx"}
+ALLOWED_EXT      = {"pdf", "txt", "docx", "mdx"}
 
 os.makedirs(DOCUMENTS_FOLDER, exist_ok=True)
 os.makedirs(HISTORY_FOLDER, exist_ok=True)
@@ -68,6 +70,34 @@ def read_pdf(file_path):
                             "source": file_path,
                             "page": page_num
                         })
+    return sentences
+
+def read_mdx(file_path):
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        content = f.read()
+
+    # Strip YAML frontmatter (--- ... ---)
+    content = re.sub(r'^---[\s\S]*?---\n', '', content, flags=re.MULTILINE)
+
+    # Strip JSX import statements
+    content = re.sub(r'^import\s+.*$', '', content, flags=re.MULTILINE)
+
+    # Strip JSX/HTML-style components and tags e.g. <Tabs>, <CodeBlock foo="bar">
+    content = re.sub(r'<[A-Z][^>]*/?>', '', content)   # opening/self-closing
+    content = re.sub(r'</[A-Z][a-zA-Z]+>', '', content) # closing tags
+
+    # Strip MDX export statements
+    content = re.sub(r'^export\s+.*$', '', content, flags=re.MULTILINE)
+
+    sentences = []
+    for line in content.splitlines():
+        line = line.strip()
+        if line:
+            sentences.append({
+                "text": line,
+                "source": file_path,
+                "page": None
+            })
     return sentences
 
 # ── Chunking ──────────────────────────────────────────────────
@@ -107,7 +137,9 @@ def parse_all_documents():
     files = (
         glob.glob(f"{DOCUMENTS_FOLDER}/*.pdf") +
         glob.glob(f"{DOCUMENTS_FOLDER}/*.txt") +
-        glob.glob(f"{DOCUMENTS_FOLDER}/*.docx")
+        glob.glob(f"{DOCUMENTS_FOLDER}/*.docx") +
+        glob.glob(f"{DOCUMENTS_FOLDER}/*.mdx")
+
     )
     if not files:
         print("No documents found in documents/ folder.")
@@ -121,6 +153,8 @@ def parse_all_documents():
             all_sentences.extend(read_txt(filepath))
         elif ext == "docx":
             all_sentences.extend(read_docx(filepath))
+        elif ext == "mdx":                          
+            all_sentences.extend(read_mdx(filepath))
     return all_sentences
 
 # ── Hash-based change detection ───────────────────────────────
@@ -128,7 +162,8 @@ def get_documents_hash():
     files = sorted(
         glob.glob(f"{DOCUMENTS_FOLDER}/*.pdf") +
         glob.glob(f"{DOCUMENTS_FOLDER}/*.txt") +
-        glob.glob(f"{DOCUMENTS_FOLDER}/*.docx")
+        glob.glob(f"{DOCUMENTS_FOLDER}/*.docx") +
+        glob.glob(f"{DOCUMENTS_FOLDER}/*.mdx")
     )
     fingerprint = "|".join(
         f"{os.path.basename(f)}:{os.path.getsize(f)}" for f in files
@@ -254,7 +289,8 @@ def list_documents():
     files = sorted(
         glob.glob(f"{DOCUMENTS_FOLDER}/*.pdf") +
         glob.glob(f"{DOCUMENTS_FOLDER}/*.txt") +
-        glob.glob(f"{DOCUMENTS_FOLDER}/*.docx")
+        glob.glob(f"{DOCUMENTS_FOLDER}/*.docx") +
+        glob.glob(f"{DOCUMENTS_FOLDER}/*.mdx")
     )
     docs = [
         {

@@ -222,7 +222,7 @@ function DocumentsPanel({ onIndexUpdated }) {
           <input
             ref={fileRef}
             type="file"
-            accept=".pdf,.txt,.docx"
+            accept=".pdf,.txt,.docx, .mdx"
             style={{ display: "none" }}
             onChange={handleUpload}
           />
