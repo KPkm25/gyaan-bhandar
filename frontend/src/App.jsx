@@ -87,8 +87,24 @@ function TypingDots() {
   );
 }
 
+// ── Confidence Badge ──────────────────────────────────────────
+function ConfidenceBadge({ score }) {
+  const pct = Math.round(score * 100);
+  const isLow = score < 0.35;
+  const isMid = score >= 0.35 && score < 0.6;
+  return (
+    <span className={`confidence-badge ${isLow ? "confidence-badge--low" : isMid ? "confidence-badge--mid" : "confidence-badge--high"}`}>
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+        <circle cx="5" cy="5" r="4" stroke="currentColor" strokeWidth="1.2"/>
+        <path d="M5 3v2.5L6.5 7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+      </svg>
+      {pct}% confidence
+    </span>
+  );
+}
+
 // ── Chat Message ──────────────────────────────────────────────
-function ChatMessage({ msg }) {
+function ChatMessage({ msg, onForce }) {
   const isUser = msg.role === "user";
   return (
     <div className={`message message--${isUser ? "user" : "ai"}`}>
@@ -124,7 +140,42 @@ function ChatMessage({ msg }) {
               >{msg.text}</ReactMarkdown>
             </div>
           )}
+          {/* Confidence badge shown on all AI messages */}
+          {!isUser && msg.confidence !== undefined && (
+            <div className="message__meta">
+              <ConfidenceBadge score={msg.confidence} />
+            </div>
+          )}
         </div>
+
+        {/* "Ask anyway" button — only shown when backend signals can_force */}
+        {msg.canForce && (
+          <button
+            className="force-btn"
+            onClick={() => onForce(msg.originalQuery)}
+          >
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+              <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1.3"/>
+              <path d="M4.5 6.5h4M7 4.5l2 2-2 2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            Generate best-effort answer anyway
+          </button>
+        )}
+
+        {/* GitHub issue link — shown on low confidence responses */}
+        {msg.issueUrl && (
+          <a className="issue-link" href={msg.issueUrl} target="_blank" rel="noreferrer">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+              <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1.3"/>
+              <path d="M6.5 4v3M6.5 8.5v.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+            </svg>
+            Documentation gap flagged — GitHub issue created
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M2 8L8 2M8 2H4M8 2v4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </a>
+        )}
+
         {msg.chunks && msg.chunks.length > 0 && (
           <div className="context-panel">
             <div className="context-panel__label">
@@ -222,7 +273,7 @@ function DocumentsPanel({ onIndexUpdated }) {
           <input
             ref={fileRef}
             type="file"
-            accept=".pdf,.txt,.docx, .mdx"
+            accept=".pdf,.txt,.docx"
             style={{ display: "none" }}
             onChange={handleUpload}
           />
@@ -370,7 +421,7 @@ export default function App() {
     setActiveSession(data);
     const restored = data.messages.flatMap(m => ([
       { role: "user", text: m.user },
-      { role: "ai", text: m.assistant, chunks: m.chunks }
+      { role: "ai", text: m.assistant, chunks: m.chunks, confidence: m.confidence, issueUrl: m.issue_url }
     ]));
     setMessages(
       restored.length > 0
@@ -417,8 +468,15 @@ export default function App() {
       if (!res.ok) {
         setMessages(m => [...m, { role: "ai", text: `⚠️ ${data.error}` }]);
       } else {
-        setMessages(m => [...m, { role: "ai", text: data.answer, chunks: data.chunks }]);
-        // Update session title in sidebar
+        setMessages(m => [...m, {
+          role: "ai",
+          text: data.answer,
+          chunks: data.chunks,
+          confidence: data.confidence,
+          issueUrl: data.issue_url,
+          canForce: data.can_force || false,
+          originalQuery: q
+        }]);
         setSessions(prev => prev.map(s =>
           s.id === sessionId
             ? { ...s, title: q.slice(0, 45) + (q.length > 45 ? "…" : "") }
@@ -427,6 +485,47 @@ export default function App() {
       }
     } catch {
       setMessages(m => [...m, { role: "ai", text: "⚠️ Could not reach the backend. Make sure Flask is running on port 5000." }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const forceSend = async (originalQuery) => {
+    // Disable the canForce button on the previous message
+    setMessages(m => m.map(msg =>
+      msg.canForce ? { ...msg, canForce: false } : msg
+    ));
+
+    setMessages(m => [...m, { role: "user", text: "Generate answer anyway →" }]);
+    setLoading(true);
+
+    let sessionId = activeSession?.id;
+
+    try {
+      const res = await fetch(`${API_BASE}/query`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: originalQuery,
+          session_id: sessionId,
+          force_answer: true
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessages(m => [...m, { role: "ai", text: `⚠️ ${data.error}` }]);
+      } else {
+        setMessages(m => [...m, {
+          role: "ai",
+          text: data.answer,
+          chunks: data.chunks,
+          confidence: data.confidence,
+          issueUrl: data.issue_url,
+          canForce: false
+        }]);
+      }
+    } catch {
+      setMessages(m => [...m, { role: "ai", text: "⚠️ Could not reach the backend." }]);
     } finally {
       setLoading(false);
     }
@@ -463,7 +562,7 @@ export default function App() {
 
         <main className="chat">
           <div className="chat__inner">
-            {messages.map((m, i) => <ChatMessage key={i} msg={m} />)}
+            {messages.map((m, i) => <ChatMessage key={i} msg={m} onForce={forceSend} />)}
             {loading && <TypingDots />}
             <div ref={chatEndRef} />
           </div>

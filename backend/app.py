@@ -2,21 +2,20 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timezone
 from docx import Document
 import requests
 import faiss
 import numpy as np
 import pickle
 import os
+import re
 import glob
 import json
 import uuid
 import hashlib
 import PyPDF2
 from sentence_transformers import SentenceTransformer
-import re
-
 
 load_dotenv()
 
@@ -29,12 +28,16 @@ API_KEY         = os.getenv("GROQ_API_KEY")
 BASE_URL        = "https://api.groq.com/openai/v1"
 GROQ_HEADERS    = {"Authorization": f"Bearer {API_KEY}"}
 
-DOCUMENTS_FOLDER = "documents"
-HISTORY_FOLDER   = "chat_history"
-INDEX_PATH       = "faiss.index"
-CHUNKS_PATH      = "chunks.pkl"
-HASH_PATH        = "documents.hash"
-ALLOWED_EXT      = {"pdf", "txt", "docx", "mdx"}
+GITHUB_TOKEN    = os.getenv("GITHUB_TOKEN")
+GITHUB_REPO     = os.getenv("GITHUB_REPO")   # e.g. "KPkm25/gyaan-bhandar"
+
+DOCUMENTS_FOLDER      = "documents"
+HISTORY_FOLDER        = "chat_history"
+INDEX_PATH            = "faiss.index"
+CHUNKS_PATH           = "chunks.pkl"
+HASH_PATH             = "documents.hash"
+ALLOWED_EXT           = {"pdf", "txt", "docx", "mdx"}
+LOW_CONFIDENCE_THRESHOLD = 0.35
 
 os.makedirs(DOCUMENTS_FOLDER, exist_ok=True)
 os.makedirs(HISTORY_FOLDER, exist_ok=True)
@@ -76,29 +79,22 @@ def read_mdx(file_path):
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         content = f.read()
 
-    # Strip YAML frontmatter (--- ... ---)
+    # Strip YAML frontmatter
     content = re.sub(r'^---[\s\S]*?---\n', '', content, flags=re.MULTILINE)
-
-    # Strip JSX import statements
+    # Strip import statements
     content = re.sub(r'^import\s+.*$', '', content, flags=re.MULTILINE)
-
-    # Strip JSX/HTML-style components and tags e.g. <Tabs>, <CodeBlock foo="bar">
-    content = re.sub(r'<[A-Z][^>]*/?>', '', content)   # opening/self-closing
-    content = re.sub(r'</[A-Z][a-zA-Z]+>', '', content) # closing tags
-
-    # Strip MDX export statements
+    # Strip JSX/HTML components (uppercase opening/self-closing tags)
+    content = re.sub(r'<[A-Z][^>]*/?>', '', content)
+    content = re.sub(r'</[A-Z][a-zA-Z]+>', '', content)
+    # Strip known lowercase MDX components
+    content = re.sub(r'</?(?:Note|Warning|Tip|Callout|Card|Tab|Tabs|CodeBlock|CodeTabs)[^>]*>', '', content)
+    # Strip export statements
     content = re.sub(r'^export\s+.*$', '', content, flags=re.MULTILINE)
 
-    sentences = []
-    for line in content.splitlines():
-        line = line.strip()
-        if line:
-            sentences.append({
-                "text": line,
-                "source": file_path,
-                "page": None
-            })
-    return sentences
+    return [
+        {"text": line.strip(), "source": file_path, "page": None}
+        for line in content.splitlines() if line.strip()
+    ]
 
 # ── Chunking ──────────────────────────────────────────────────
 def chunk_text(sentences, chunk_size=200, overlap=50):
@@ -139,7 +135,6 @@ def parse_all_documents():
         glob.glob(f"{DOCUMENTS_FOLDER}/*.txt") +
         glob.glob(f"{DOCUMENTS_FOLDER}/*.docx") +
         glob.glob(f"{DOCUMENTS_FOLDER}/*.mdx")
-
     )
     if not files:
         print("No documents found in documents/ folder.")
@@ -153,7 +148,7 @@ def parse_all_documents():
             all_sentences.extend(read_txt(filepath))
         elif ext == "docx":
             all_sentences.extend(read_docx(filepath))
-        elif ext == "mdx":                          
+        elif ext == "mdx":
             all_sentences.extend(read_mdx(filepath))
     return all_sentences
 
@@ -212,20 +207,33 @@ def load_or_build_index():
 
 index, chunks = load_or_build_index()
 
-# ── FAISS search ──────────────────────────────────────────────
+# ── FAISS search with confidence score ───────────────────────
 def search_docs(query, k=3):
     if index is None or not chunks:
-        return []
+        return [], 0.0
+
     q_emb = model.encode([query]).astype("float32")
     distances, indices = index.search(q_emb, k=k)
-    return [
-        {
-            "text": chunks[i]["text"],
-            "source": os.path.basename(chunks[i]["source"]),
-            "page": chunks[i]["page"]
-        }
-        for i in indices[0] if i < len(chunks)
-    ]
+
+    results = []
+    for i, idx in enumerate(indices[0]):
+        if idx < len(chunks):
+            results.append({
+                "text": chunks[idx]["text"],
+                "source": os.path.basename(chunks[idx]["source"]),
+                "page": chunks[idx]["page"],
+                "distance": float(distances[0][i])
+            })
+
+    if not results:
+        return [], 0.0
+
+    # Convert L2 distance → confidence score (0–1)
+    # all-MiniLM-L6-v2 typical L2 range: 0 (identical) to ~2 (unrelated)
+    avg_distance = sum(r["distance"] for r in results) / len(results)
+    confidence = round(max(0.0, min(1.0, 1 - (avg_distance / 2.0))), 3)
+
+    return results, confidence
 
 # ── Groq LLM ──────────────────────────────────────────────────
 def ask_groq(query, retrieved_chunks, model_name="llama-3.1-8b-instant"):
@@ -260,6 +268,46 @@ def ask_groq(query, retrieved_chunks, model_name="llama-3.1-8b-instant"):
     if "choices" in result:
         return result["choices"][0]["message"]["content"]
     return f"Error from Groq: {result}"
+
+# ── GitHub issue creation ─────────────────────────────────────
+def create_github_issue(query, confidence, retrieved):
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        print("GitHub not configured — skipping issue creation.")
+        return None
+
+    sources = list(set(c["source"] for c in retrieved))
+    body = (
+        f"## Documentation Gap Detected\n\n"
+        f"**Query:** {query}\n\n"
+        f"**Confidence Score:** {confidence:.0%}\n\n"
+        f"**Closest sources searched:**\n"
+        + "\n".join(f"- `{s}`" for s in sources)
+        + f"\n\n---\n*Auto-generated by Gyaan Bhandar. "
+          f"This query could not be answered confidently from the current documentation.*"
+    )
+
+    response = requests.post(
+        f"https://api.github.com/repos/{GITHUB_REPO}/issues",
+        headers={
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json"
+        },
+        json={
+            "title": f"[Doc Gap] {query[:80]}",
+            "body": body,
+            "labels": ["documentation", "auto-generated"]
+        },
+        verify=False
+
+    )
+
+    if response.status_code == 201:
+        issue_url = response.json().get("html_url")
+        print(f"GitHub issue created: {issue_url}")
+        return issue_url
+    else:
+        print(f"GitHub issue creation failed: {response.status_code} {response.text}")
+        return None
 
 # ── Chat history helpers ──────────────────────────────────────
 def session_path(session_id):
@@ -323,7 +371,6 @@ def upload():
     file.save(save_path)
     print(f"Uploaded: {filename}")
 
-    # Force rebuild by deleting old hash
     if os.path.exists(HASH_PATH):
         os.remove(HASH_PATH)
 
@@ -354,14 +401,100 @@ def query():
     data = request.get_json()
     user_query = data.get("query", "").strip()
     session_id = data.get("session_id")
+    force_answer = data.get("force_answer", False)  # ← user can override
 
     if not user_query:
         return jsonify({"error": "Query cannot be empty."}), 400
     if not chunks:
         return jsonify({"error": "No documents loaded. Please upload a file first."}), 400
 
-    retrieved = search_docs(user_query, k=3)
+    retrieved, confidence = search_docs(user_query, k=3)
+    is_low_confidence = confidence < LOW_CONFIDENCE_THRESHOLD
+
+    # If low confidence and user hasn't forced an answer — skip LLM
+    if is_low_confidence and not force_answer:
+        issue_url = create_github_issue(user_query, confidence, retrieved)
+
+        # Summarise what the closest chunks ARE about
+        sources = list(set(c["source"] for c in retrieved))
+        source_list = "\n".join(f"- `{s}`" for s in sources)
+
+        answer = (
+            f"I couldn't find documentation that closely matches your query.\n\n"
+            f"**Closest topics found in your documents:**\n{source_list}\n\n"
+            f"> The retrieved chunks mention: _{retrieved[0]['text'][:120]}..._\n\n"
+            f"This may not be what you're looking for. You can:\n"
+            f"- **Rephrase** your question if you meant something else\n"
+            f"- **Ask anyway** and I'll generate a best-effort answer from the available context"
+        )
+
+        return jsonify({
+            "query": user_query,
+            "answer": answer,
+            "chunks": retrieved,
+            "confidence": confidence,
+            "low_confidence": True,
+            "issue_url": issue_url,
+            "can_force": True   # ← tells frontend to show the "Ask anyway" button
+        })
+
+    # Normal flow — call Groq
     answer = ask_groq(user_query, retrieved)
+    issue_url = None
+
+    # Save to session
+    if session_id:
+        path = session_path(session_id)
+        if os.path.exists(path):
+            with open(path) as f:
+                session = json.load(f)
+            if session["title"] == "New Chat":
+                session["title"] = user_query[:45] + ("…" if len(user_query) > 45 else "")
+            session["messages"].append({
+                "user": user_query,
+                "assistant": answer,
+                "chunks": retrieved,
+                "confidence": confidence,
+                "issue_url": issue_url,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            session["updated_at"] = datetime.now(timezone.utc).isoformat()
+            with open(path, "w") as f:
+                json.dump(session, f, indent=2)
+
+    return jsonify({
+        "query": user_query,
+        "answer": answer,
+        "chunks": retrieved,
+        "confidence": confidence,
+        "low_confidence": False,
+        "issue_url": None,
+        "can_force": False
+    })
+    data = request.get_json()
+    user_query = data.get("query", "").strip()
+    session_id = data.get("session_id")
+
+    if not user_query:
+        return jsonify({"error": "Query cannot be empty."}), 400
+    if not chunks:
+        return jsonify({"error": "No documents loaded. Please upload a file first."}), 400
+
+    retrieved, confidence = search_docs(user_query, k=3)
+    answer = ask_groq(user_query, retrieved)
+
+    # Flag low confidence and prepend warning to answer
+    is_low_confidence = confidence < LOW_CONFIDENCE_THRESHOLD
+    if is_low_confidence:
+        answer = (
+            f"> ⚠️ **Low confidence response** (score: {confidence:.0%}) — "
+            f"the documentation may not cover this topic well.\n\n{answer}"
+        )
+
+    # Auto-create GitHub issue for low confidence queries
+    issue_url = None
+    if is_low_confidence:
+        issue_url = create_github_issue(user_query, confidence, retrieved)
 
     # Save to session history
     if session_id:
@@ -375,16 +508,21 @@ def query():
                 "user": user_query,
                 "assistant": answer,
                 "chunks": retrieved,
-                "timestamp": datetime.utcnow().isoformat()
+                "confidence": confidence,
+                "issue_url": issue_url,
+                "timestamp": datetime.now(timezone.utc).isoformat()
             })
-            session["updated_at"] = datetime.utcnow().isoformat()
+            session["updated_at"] = datetime.now(timezone.utc).isoformat()
             with open(path, "w") as f:
                 json.dump(session, f, indent=2)
 
     return jsonify({
         "query": user_query,
         "answer": answer,
-        "chunks": retrieved
+        "chunks": retrieved,
+        "confidence": confidence,
+        "low_confidence": is_low_confidence,
+        "issue_url": issue_url
     })
 
 # ── Routes: Chat Sessions ─────────────────────────────────────
@@ -412,8 +550,8 @@ def create_session():
         "id": str(uuid.uuid4()),
         "title": "New Chat",
         "messages": [],
-        "created_at": datetime.utcnow().isoformat(),
-        "updated_at": datetime.utcnow().isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat()
     }
     with open(session_path(session["id"]), "w") as f:
         json.dump(session, f, indent=2)
@@ -435,4 +573,4 @@ def delete_session(session_id):
     return jsonify({"status": "deleted"})
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5000, exclude_patterns=["*.pyc", "*site-packages*"])
