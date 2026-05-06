@@ -1,4 +1,3 @@
-version: '1'
 services:
   frontend:
     build: ./frontend
@@ -14,12 +13,17 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - DB_HOST=db
-      - DB_USER=root
-      - DB_PASSWORD=password
-      - DB_NAME=myapp
+      - GROQ_API_KEY=<GROQ_API_KEY>
+      - MODEL_PATH=all-MiniLM-L6-v2
+    volumes:
+      - ./backend/documents:/app/documents
+      - ./backend/chat_history:/app/chat_history
+      - faiss_data:/app
     networks:
       - gyan_bhandar_network
+
+volumes:
+  faiss_data:
 
 networks:
   gyan_bhandar_network:
