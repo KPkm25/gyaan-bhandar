@@ -33,9 +33,9 @@ GITHUB_REPO     = os.getenv("GITHUB_REPO")   # e.g. "KPkm25/gyaan-bhandar"
 
 DOCUMENTS_FOLDER      = "documents"
 HISTORY_FOLDER        = "chat_history"
-INDEX_PATH            = "faiss.index"
-CHUNKS_PATH           = "chunks.pkl"
-HASH_PATH             = "documents.hash"
+INDEX_PATH  = "faiss_store/faiss.index"
+CHUNKS_PATH = "faiss_store/chunks.pkl"
+HASH_PATH   = "faiss_store/documents.hash"
 ALLOWED_EXT           = {"pdf", "txt", "docx", "mdx"}
 LOW_CONFIDENCE_THRESHOLD = 0.35
 

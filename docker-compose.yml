@@ -18,7 +18,7 @@ services:
     volumes:
       - ./backend/documents:/app/documents
       - ./backend/chat_history:/app/chat_history
-      - faiss_data:/app
+      - faiss_data:/app/faiss_store
     networks:
       - gyan_bhandar_network
 
