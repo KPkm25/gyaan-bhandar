@@ -573,4 +573,4 @@ def delete_session(session_id):
     return jsonify({"status": "deleted"})
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000, exclude_patterns=["*.pyc", "*site-packages*"])
+    app.run(host="0.0.0.0", port=5000)

@@ -1,18 +1,25 @@
-FROM python:3.10-alpine AS builder
-WORKDIR /app
-# Install build dependencies
-RUN apk add --no-cache gcc musl-dev python3-dev
-COPY requirements.txt .
-# Create wheels for faster installation
-RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
+FROM python:3.11-slim
 
-FROM python:3.10-alpine
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
-COPY --from=builder /wheels /wheels
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
-# Install from pre-built wheels
-RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt && \
-    rm -rf /wheels
+
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+
 COPY . .
+
+RUN useradd -m appuser
+USER appuser
+
 EXPOSE 5000
+
 CMD ["python", "app.py"]

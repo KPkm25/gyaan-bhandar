@@ -1,26 +1,29 @@
 services:
-  frontend:
-    build: ./frontend
-    ports:
-      - "3000:80"
-    networks:
-      - gyan_bhandar_network
-    depends_on:
-      - backend
-
   backend:
     build: ./backend
+    container_name: gyaan_backend
     ports:
       - "5000:5000"
-    environment:
-      - GROQ_API_KEY=<GROQ_API_KEY>
-      - MODEL_PATH=all-MiniLM-L6-v2
+    env_file:
+      - .env
     volumes:
+      - faiss_data:/app/faiss_store
       - ./backend/documents:/app/documents
       - ./backend/chat_history:/app/chat_history
-      - faiss_data:/app/faiss_store
     networks:
       - gyan_bhandar_network
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: gyaan_frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - gyan_bhandar_network
+    restart: unless-stopped
 
 volumes:
   faiss_data:
