@@ -1,5 +1,6 @@
 # Secrets
 backend/.env
+.env
 
 # Generated index files (rebuilt automatically on first run)
 backend/faiss.index
@@ -9,6 +10,9 @@ backend/k8s_doc.pdf
 
 # Document uploads (kept locally, not in git)
 backend/documents/
+
+# Local LLM
+all-MiniLM-L6-v2
 
 # Chat history (local only)
 backend/chat_history/

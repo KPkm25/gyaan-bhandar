@@ -17,7 +17,17 @@ RUN pip install --upgrade pip && \
 
 COPY . .
 
+# Create required dirs
+RUN mkdir -p /app/documents \
+             /app/chat_history \
+             /app/faiss_store
+
+# Create non-root user
 RUN useradd -m appuser
+
+# Give ownership to appuser
+RUN chown -R appuser:appuser /app
+
 USER appuser
 
 EXPOSE 5000
