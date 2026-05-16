@@ -2,8 +2,8 @@ flask
 flask-cors
 requests
 faiss-cpu
-numpy
-sentence-transformers
+numpy<2
+sentence-transformers==2.7.0
 python-docx
 PyPDF2
 python-dotenv
