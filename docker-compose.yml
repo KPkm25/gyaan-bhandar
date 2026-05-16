@@ -10,6 +10,7 @@ services:
       - faiss_data:/app/faiss_store
       - ./backend/documents:/app/documents
       - ./backend/chat_history:/app/chat_history
+      - /all-MiniLM-L6-v2:/app/all-MiniLM-L6-v2
     networks:
       - gyan_bhandar_network
     restart: unless-stopped
