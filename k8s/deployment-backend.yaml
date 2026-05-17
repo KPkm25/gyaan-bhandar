@@ -14,11 +14,16 @@ spec:
     metadata:
       labels:
         app: gyan-bhandar-backend
-    imagePullSecrets:
-      - name: dockerhub-secret
     spec:
+      imagePullSecrets:
+      - name: dockerhub-secret
       containers:
       - image: kpkm25/gyan-bhandar-backend:latest
         name: gyan-bhandar-backend
+        ports:
+        - containerPort: 5000
         resources: {}
+        envFrom:
+          - secretRef:
+              name: gyan-secrets
 status: {}
