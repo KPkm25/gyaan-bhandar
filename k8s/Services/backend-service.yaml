@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: gyan-bhandar-backend-service
+  name: gyan-bhandar-backend-svc
 spec:
   selector:
     app: gyan-bhandar-backend

@@ -1,0 +1,11 @@
+# Non-secret environment config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gyan-config
+data:
+  MODEL_PATH: "/app/all-MiniLM-L6-v2"
+  FAISS_STORE_PATH: "/app/faiss_store"
+  DOCUMENTS_PATH: "/app/documents"
+  CHAT_HISTORY_PATH: "/app/chat_history"
+  BACKEND_URL: "http://gyan-bhandar-backend-svc:5000" 

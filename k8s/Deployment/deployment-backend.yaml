@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: gyan-bhandar-backend
+  name: gyan-bhandar-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gyan-bhandar-backend
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: gyan-bhandar-backend
+    spec:
+      volumes:
+      - name: faiss-store
+        persistentVolumeClaim:
+          claimName: faiss-store-pvc
+      - name: chat-history
+        persistentVolumeClaim:
+          claimName: chat-history-pvc
+      - name: documents
+        persistentVolumeClaim:
+          claimName: documents-pvc
+      - name: model
+        persistentVolumeClaim:
+          claimName: model-pvc
+      imagePullSecrets:
+      - name: dockerhub-secret
+      containers:
+      - image: kpkm25/gyan-bhandar-backend:latest
+        name: gyan-bhandar-backend
+        volumeMounts:
+        - mountPath: /app/faiss_store
+          name: faiss-store
+        - mountPath: /app/chat_history
+          name: chat-history
+        - mountPath: /app/documents
+          name: documents
+        - mountPath: /app/all-MiniLM-L6-v2
+          name: model
+        ports:
+        - containerPort: 5000
+        resources: {}
+        envFrom:
+          - configMapRef:
+              name: gyan-config
+          - secretRef:
+              name: gyan-secrets
+status: {}

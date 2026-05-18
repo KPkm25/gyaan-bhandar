@@ -31,16 +31,20 @@ GROQ_HEADERS    = {"Authorization": f"Bearer {API_KEY}"}
 GITHUB_TOKEN    = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO     = os.getenv("GITHUB_REPO")   # e.g. "KPkm25/gyaan-bhandar"
 
-DOCUMENTS_FOLDER      = "documents"
-HISTORY_FOLDER        = "chat_history"
-INDEX_PATH  = "faiss_store/faiss.index"
-CHUNKS_PATH = "faiss_store/chunks.pkl"
-HASH_PATH   = "faiss_store/documents.hash"
+DOCUMENTS_FOLDER      = os.getenv("DOCUMENTS_PATH")
+HISTORY_FOLDER   = os.getenv("CHAT_HISTORY_PATH", "/app/chat_history")
+FAISS_STORE_PATH = os.getenv("FAISS_STORE_PATH", "/app/faiss_store")
+
+# Derived from FAISS_STORE_PATH
+INDEX_PATH  = os.path.join(FAISS_STORE_PATH, "faiss.index")
+CHUNKS_PATH = os.path.join(FAISS_STORE_PATH, "chunks.pkl")
+HASH_PATH   = os.path.join(FAISS_STORE_PATH, "documents.hash")
 ALLOWED_EXT           = {"pdf", "txt", "docx", "mdx"}
 LOW_CONFIDENCE_THRESHOLD = 0.35
 
 os.makedirs(DOCUMENTS_FOLDER, exist_ok=True)
 os.makedirs(HISTORY_FOLDER, exist_ok=True)
+os.makedirs(FAISS_STORE_PATH, exist_ok=True) 
 
 # ── Load model ────────────────────────────────────────────────
 print("Loading embedding model...")

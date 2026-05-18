@@ -2,28 +2,30 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: gyan-bhandar-backend
-  name: gyan-bhandar-backend
+    app: gyan-bhandar
+  name: gyan-bhandar
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: gyan-bhandar-backend
+      app: gyan-bhandar
   strategy: {}
   template:
     metadata:
       labels:
-        app: gyan-bhandar-backend
+        app: gyan-bhandar
     spec:
       imagePullSecrets:
       - name: dockerhub-secret
       containers:
-      - image: kpkm25/gyan-bhandar-backend:latest
-        name: gyan-bhandar-backend
+      - image: kpkm25/gyan-bhandar-frontend:latest
+        name: gyan-bhandar
         ports:
-        - containerPort: 5000
+        - containerPort: 80
         resources: {}
         envFrom:
+          - configMapRef:
+              name: gyan-config
           - secretRef:
               name: gyan-secrets
 status: {}
