@@ -12,7 +12,7 @@ metadata:
   namespace: metallb-system
 spec:
   addresses:
-    - 192.168.1.200-192.168.1.220   # Need be replace
+    - 192.168.24.100-192.168.24.100
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement

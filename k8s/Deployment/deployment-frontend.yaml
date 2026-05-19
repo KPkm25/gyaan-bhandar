@@ -24,7 +24,7 @@ spec:
         - name: dockerhub-secret
       containers:
         - name: gyan-bhandar-frontend
-          image: kpkm25/gyan-bhandar-frontend:latest
+          image: kpkm25/gyaan-bhandar-frontend:latest
           ports:
             - containerPort: 80
           resources:
