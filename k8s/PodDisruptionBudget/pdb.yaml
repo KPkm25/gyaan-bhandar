@@ -1,0 +1,23 @@
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gyan-bhandar-backend-pdb
+  namespace: gyaan-bhandar
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: gyan-bhandar-backend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gyan-bhandar-frontend-pdb
+  namespace: gyaan-bhandar
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: gyan-bhandar-frontend
+      

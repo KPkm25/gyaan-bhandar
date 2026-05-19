@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import "./App.css";
 
-const API_BASE = "http://gyan-bhandar-backend-service:5000";
+const API_BASE = process.env.REACT_APP_API_BASE || "http://localhost:5000";
 
 // ── Copy Button ───────────────────────────────────────────────
 function CopyButton({ text, small = false }) {

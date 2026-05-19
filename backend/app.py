@@ -24,12 +24,12 @@ CORS(app)
 
 # ── Config ────────────────────────────────────────────────────
 MODEL_PATH      = os.getenv("MODEL_PATH", "all-MiniLM-L6-v2")
-API_KEY         = os.getenv("GROQ_API_KEY")
+API_KEY         = os.getenv("groq_key")
 BASE_URL        = "https://api.groq.com/openai/v1"
 GROQ_HEADERS    = {"Authorization": f"Bearer {API_KEY}"}
 
-GITHUB_TOKEN    = os.getenv("GITHUB_TOKEN")
-GITHUB_REPO     = os.getenv("GITHUB_REPO")   # e.g. "KPkm25/gyaan-bhandar"
+GITHUB_TOKEN    = os.getenv("github_token")
+GITHUB_REPO     = os.getenv("github_repo")  
 
 DOCUMENTS_FOLDER      = os.getenv("DOCUMENTS_PATH")
 HISTORY_FOLDER   = os.getenv("CHAT_HISTORY_PATH", "/app/chat_history")

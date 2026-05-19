@@ -1,0 +1,89 @@
+# kube-prometheus-stack Helm values — tuned for local VMware (no cloud storage)
+# Install:
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm repo update
+#   kubectl create namespace monitoring
+#   helm install kube-prometheus prometheus-community/kube-prometheus-stack \
+#     --namespace monitoring \
+#     --values k8s/Monitoring/prometheus-grafana-values.yaml
+
+grafana:
+  enabled: true
+  adminPassword: "admin"   # Change this
+  service:
+    type: NodePort
+    nodePort: 32000         # Access Grafana at http://<your-vm-ip>:32000
+  persistence:
+    enabled: true
+    size: 2Gi
+  # Pre-load a dashboard for gyaan-bhandar
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: default
+          orgId: 1
+          folder: ""
+          type: file
+          options:
+            path: /var/lib/grafana/dashboards/default
+  dashboards:
+    default:
+      kubernetes-overview:
+        gnetId: 15760     # Kubernetes Overview dashboard from grafana.com
+        revision: 1
+        datasource: Prometheus
+
+prometheus:
+  enabled: true
+  prometheusSpec:
+    retention: 7d
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+    # Scrape pods with prometheus annotations (matches our backend annotation)
+    podMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    additionalScrapeConfigs:
+      - job_name: gyaan-bhandar-backend
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - gyaan-bhandar
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+
+# Disable components that need cloud/multi-node setup
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false

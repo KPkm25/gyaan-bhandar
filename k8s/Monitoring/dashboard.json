@@ -1,0 +1,97 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "description": "Gyaan Bhandar — Application Metrics",
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Backend Request Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(flask_http_request_total{namespace=\"gyaan-bhandar\"}[5m])",
+          "legendFormat": "{{method}} {{status}}"
+        }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "title": "Backend Request Latency (p95)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(flask_http_request_duration_seconds_bucket{namespace=\"gyaan-bhandar\"}[5m]))",
+          "legendFormat": "p95 latency"
+        }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "percentunit" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "title": "CPU Usage — Backend vs Frontend",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(container_cpu_usage_seconds_total{namespace=\"gyaan-bhandar\"}[5m])",
+          "legendFormat": "{{pod}}"
+        }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "title": "Memory Usage",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "container_memory_working_set_bytes{namespace=\"gyaan-bhandar\", container!=\"\"}",
+          "legendFormat": "{{pod}}"
+        }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 16 },
+      "id": 5,
+      "title": "Backend Replicas (HPA)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "kube_deployment_status_replicas_available{namespace=\"gyaan-bhandar\", deployment=\"gyan-bhandar-backend\"}",
+          "legendFormat": "Available"
+        }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 16 },
+      "id": 6,
+      "title": "Frontend Replicas (HPA)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "kube_deployment_status_replicas_available{namespace=\"gyaan-bhandar\", deployment=\"gyan-bhandar-frontend\"}",
+          "legendFormat": "Available"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "title": "Gyaan Bhandar",
+  "uid": "gyaan-bhandar",
+  "version": 1
+}

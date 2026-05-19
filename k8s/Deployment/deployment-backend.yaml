@@ -1,53 +1,82 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: gyan-bhandar-backend
+  namespace: gyaan-bhandar
   labels:
     app: gyan-bhandar-backend
-  name: gyan-bhandar-backend
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: gyan-bhandar-backend
-  strategy: {}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: gyan-bhandar-backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
+        prometheus.io/path: "/metrics"
     spec:
       volumes:
-      - name: faiss-store
-        persistentVolumeClaim:
-          claimName: faiss-store-pvc
-      - name: chat-history
-        persistentVolumeClaim:
-          claimName: chat-history-pvc
-      - name: documents
-        persistentVolumeClaim:
-          claimName: documents-pvc
-      - name: model
-        persistentVolumeClaim:
-          claimName: model-pvc
+        - name: faiss-store
+          persistentVolumeClaim:
+            claimName: faiss-store-pvc
+        - name: chat-history
+          persistentVolumeClaim:
+            claimName: chat-history-pvc
+        - name: documents
+          persistentVolumeClaim:
+            claimName: documents-pvc
+        - name: model
+          persistentVolumeClaim:
+            claimName: model-pvc
       imagePullSecrets:
-      - name: dockerhub-secret
+        - name: dockerhub-secret
       containers:
-      - image: kpkm25/gyan-bhandar-backend:latest
-        name: gyan-bhandar-backend
-        volumeMounts:
-        - mountPath: /app/faiss_store
-          name: faiss-store
-        - mountPath: /app/chat_history
-          name: chat-history
-        - mountPath: /app/documents
-          name: documents
-        - mountPath: /app/all-MiniLM-L6-v2
-          name: model
-        ports:
-        - containerPort: 5000
-        resources: {}
-        envFrom:
-          - configMapRef:
-              name: gyan-config
-          - secretRef:
-              name: gyan-secrets
-status: {}
+        - name: gyan-bhandar-backend
+          image: kpkm25/gyan-bhandar-backend:latest
+          ports:
+            - containerPort: 5000
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          envFrom:
+            - configMapRef:
+                name: gyan-config
+            - secretRef:
+                name: gyan-secrets
+          volumeMounts:
+            - mountPath: /app/faiss_store
+              name: faiss-store
+            - mountPath: /app/chat_history
+              name: chat-history
+            - mountPath: /app/documents
+              name: documents
+            - mountPath: /app/all-MiniLM-L6-v2
+              name: model
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
+            
