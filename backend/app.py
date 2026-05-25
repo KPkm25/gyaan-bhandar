@@ -17,7 +17,7 @@ import hashlib
 import PyPDF2
 from sentence_transformers import SentenceTransformer
 
-load_dotenv()
+load_dotenv(override=False)
 
 app = Flask(__name__)
 CORS(app)
