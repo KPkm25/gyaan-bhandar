@@ -12,6 +12,7 @@ spec:
   policyTypes:
     - Ingress
   ingress:
+    # Allow frontend pods directly (server-side calls)
     - from:
         - podSelector:
             matchLabels:
@@ -19,6 +20,17 @@ spec:
       ports:
         - protocol: TCP
           port: 5000
+    # Allow Ingress Controller traffic — K3s routes through node IP, not pod IP
+    # so namespace selector alone doesn't work; need to allow by CIDR instead
+    - from:
+        - ipBlock:
+            cidr: 10.42.0.0/16        # K3s pod network CIDR
+        - ipBlock:
+            cidr: 192.168.24.0/24     # VMware LAN
+      ports:
+        - protocol: TCP
+          port: 5000
+    # Allow Prometheus scraping from monitoring namespace
     - from:
         - namespaceSelector:
             matchLabels:
@@ -43,7 +55,10 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: ingress-nginx
+        - ipBlock:
+            cidr: 10.42.0.0/16
+        - ipBlock:
+            cidr: 192.168.24.0/24
       ports:
         - protocol: TCP
           port: 80
-          

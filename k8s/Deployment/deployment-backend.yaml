@@ -39,6 +39,36 @@ spec:
             claimName: model-pvc
       imagePullSecrets:
         - name: dockerhub-secret
+      initContainers:
+        - name: download-model
+          image: python:3.11-slim
+          command:
+            - sh
+            - -c
+            - |
+              if [ -f /model/config.json ]; then
+                echo "Model already exists, skipping download."
+                exit 0
+              fi
+              echo "Installing sentence-transformers..."
+              pip install sentence-transformers==2.7.0 --quiet --no-cache-dir
+              echo "Downloading model..."
+              python -c "
+              from sentence_transformers import SentenceTransformer
+              m = SentenceTransformer('all-MiniLM-L6-v2')
+              m.save('/model')
+              print('Model saved successfully.')
+              "
+          volumeMounts:
+            - mountPath: /model
+              name: model
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
       containers:
         - name: gyan-bhandar-backend
           image: kpkm25/gyan-bhandar-backend:latest
@@ -49,8 +79,8 @@ spec:
               cpu: "250m"
               memory: "512Mi"
             limits:
-              cpu: "1000m"
-              memory: "1Gi"
+              cpu: "2000m"
+              memory: "1.5Gi"
           envFrom:
             - configMapRef:
                 name: gyan-config
