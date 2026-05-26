@@ -1,0 +1,53 @@
+# .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-backend:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: kpkm25/gyan-bhandar-backend:${{ github.sha }}
+          
+      - name: Scan backend image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: kpkm25/gyan-bhandar-backend:${{ github.sha }}
+          format: table
+          exit-code: 0
+          severity: CRITICAL,HIGH
+
+  build-frontend:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          build-args: |
+            REACT_APP_API_BASE=http://gyaan-bhandar.local/api
+          tags: kpkm25/gyan-bhandar-frontend:${{ github.sha }}
