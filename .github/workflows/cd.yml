@@ -1,0 +1,38 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    # Only deploy if CI actually passed — don't deploy on CI failure
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    
+    steps:
+      - name: Update backend image
+        run: |
+          kubectl set image deployment/gyan-bhandar-backend \
+            gyan-bhandar-backend=kpkm25/gyan-bhandar-backend:${{ github.event.workflow_run.head_sha }} \
+            -n gyaan-bhandar
+
+      - name: Update frontend image
+        run: |
+          kubectl set image deployment/gyan-bhandar-frontend \
+            gyan-bhandar-frontend=kpkm25/gyan-bhandar-frontend:${{ github.event.workflow_run.head_sha }} \
+            -n gyaan-bhandar
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/gyan-bhandar-backend \
+            -n gyaan-bhandar --timeout=300s
+          kubectl rollout status deployment/gyan-bhandar-frontend \
+            -n gyaan-bhandar --timeout=300s
+
+      - name: Verify deployments
+        run: |
+          kubectl get pods -n gyaan-bhandar
+          kubectl get svc -n gyaan-bhandar
