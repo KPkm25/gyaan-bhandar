@@ -30,6 +30,7 @@ jobs:
           image-ref: kpkm25/gyan-bhandar-backend:${{ github.sha }}
           format: table
           exit-code: 0
+          timeout: 15m
           severity: CRITICAL,HIGH
 
   build-frontend:
