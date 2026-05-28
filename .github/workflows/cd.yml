@@ -20,9 +20,6 @@ jobs:
       - name: Apply ConfigMaps
         run: kubectl apply -f k8s/Config-maps/
 
-      - name: Apply Secrets
-        run: kubectl apply -f k8s/secrets.yaml
-
       - name: Apply Volumes
         run: kubectl apply -f k8s/Volumes/
 
