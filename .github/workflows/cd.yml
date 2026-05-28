@@ -17,9 +17,6 @@ jobs:
         uses: actions/checkout@v4
 
       # Apply manifests in dependency order
-      - name: Apply Namespace
-        run: kubectl apply -f k8s/namespace.yaml
-
       - name: Apply ConfigMaps
         run: kubectl apply -f k8s/Config-maps/
 
