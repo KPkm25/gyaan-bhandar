@@ -10,4 +10,4 @@ data:
   DOCUMENTS_PATH: "/app/documents"
   CHAT_HISTORY_PATH: "/app/chat_history"
   BACKEND_URL: "http://gyan-bhandar-backend-svc:5000" 
-  REACT_APP_API_BASE: "http://gyaan-bhandar.local/api"
+  REACT_APP_API_BASE: "http://gyaan-bhandar.test/api"

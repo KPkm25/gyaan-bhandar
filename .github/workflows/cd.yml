@@ -9,10 +9,29 @@ on:
 jobs:
   deploy:
     runs-on: self-hosted
-    # Only deploy if CI actually passed — don't deploy on CI failure
+
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    
+
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Apply manifests in dependency order
+      - name: Apply Namespace
+        run: kubectl apply -f k8s/namespace.yaml
+
+      - name: Apply ConfigMaps
+        run: kubectl apply -f k8s/Config-maps/
+
+      - name: Apply Secrets
+        run: kubectl apply -f k8s/secrets.yaml
+
+      - name: Apply Volumes
+        run: kubectl apply -f k8s/Volumes/
+
+      - name: Apply Deployments
+        run: kubectl apply -f k8s/Deployment/
+
       - name: Update backend image
         run: |
           kubectl set image deployment/gyan-bhandar-backend \
@@ -25,10 +44,28 @@ jobs:
             gyan-bhandar-frontend=kpkm25/gyan-bhandar-frontend:${{ github.event.workflow_run.head_sha }} \
             -n gyaan-bhandar
 
-      - name: Wait for rollout
+      - name: Apply Services
+        run: kubectl apply -f k8s/Services/
+
+      - name: Apply Ingress
+        run: kubectl apply -f k8s/Ingress/
+
+      - name: Apply HPA
+        run: kubectl apply -f k8s/HPA/
+
+      - name: Apply PodDisruptionBudget
+        run: kubectl apply -f k8s/PodDisruptionBudget/
+
+      - name: Apply NetworkPolicy
+        run: kubectl apply -f k8s/NetworkPolicy/
+
+      - name: Wait for backend rollout
         run: |
           kubectl rollout status deployment/gyan-bhandar-backend \
             -n gyaan-bhandar --timeout=300s
+
+      - name: Wait for frontend rollout
+        run: |
           kubectl rollout status deployment/gyan-bhandar-frontend \
             -n gyaan-bhandar --timeout=300s
 
@@ -36,3 +73,4 @@ jobs:
         run: |
           kubectl get pods -n gyaan-bhandar
           kubectl get svc -n gyaan-bhandar
+          kubectl get ingress -n gyaan-bhandar
