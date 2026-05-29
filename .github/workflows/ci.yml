@@ -56,5 +56,5 @@ jobs:
           context: ./frontend
           push: true
           build-args: |
-            REACT_APP_API_BASE=http://gyaan-bhandar.local/api
+            REACT_APP_API_BASE=http://gyaan-bhandar.test/api
           tags: kpkm25/gyan-bhandar-frontend:${{ github.sha }}
