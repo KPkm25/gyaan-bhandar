@@ -16,11 +16,16 @@ import uuid
 import hashlib
 import PyPDF2
 from sentence_transformers import SentenceTransformer
+from prometheus_flask_exporter import PrometheusMetrics
 
 load_dotenv(override=False)
 
 app = Flask(__name__)
 CORS(app)
+metrics = PrometheusMetrics(app)
+
+metrics.info('gyaan_bhandar_info', 'Gyaan Bhandar backend', version='1.0.0')
+
 
 # ── Config ────────────────────────────────────────────────────
 MODEL_PATH      = os.getenv("MODEL_PATH", "all-MiniLM-L6-v2")

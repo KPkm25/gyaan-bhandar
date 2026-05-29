@@ -6,6 +6,25 @@ Ask questions about your documents in natural language. The backend retrieves th
 
 ---
 
+## Table of Contents
+
+- [Stack](#stack)
+- [Project Structure](#project-structure)
+- [Architecture](#architecture)
+- [Local Development](#local-development)
+- [Kubernetes Deployment](#kubernetes-deployment)
+  - [Prerequisites](#prerequisites)
+  - [Infrastructure Setup](#infrastructure-setup)
+  - [Application Deployment](#application-deployment)
+  - [Verify Deployment](#verify-deployment)
+- [CI/CD Pipeline](#cicd-pipeline)
+- [Monitoring](#monitoring)
+- [API Reference](#api-reference)
+- [Features](#features)
+- [Troubleshooting](#troubleshooting)
+
+---
+
 ## Stack
 
 | Layer | Technology |
@@ -14,104 +33,400 @@ Ask questions about your documents in natural language. The backend retrieves th
 | Vector Search | FAISS + sentence-transformers (all-MiniLM-L6-v2) |
 | LLM | Groq API (LLaMA 3.1 8b instant) |
 | Frontend | React 18, react-markdown, remark-gfm |
-| Storage | Local filesystem (JSON sessions, FAISS index on disk) |
+| Storage | PersistentVolumeClaims (FAISS index, documents, chat history, model) |
+| Orchestration | Kubernetes (K3s) |
+| Ingress | NGINX Ingress Controller |
+| Load Balancer | MetalLB (bare-metal) |
+| Autoscaling | Horizontal Pod Autoscaler + Metrics Server |
+| Monitoring | Prometheus + Grafana (kube-prometheus-stack) |
+| CI/CD | GitHub Actions (self-hosted runner) |
 
 ---
 
 ## Project Structure
 
 ```
-gyan-bhandar/
+gyaan-bhandar/
 ├── backend/
-│   ├── app.py                  ← Flask app — parsing, indexing, all API routes
+│   ├── app.py                    
 │   ├── requirements.txt
-│   ├── .env                    ← secrets (never commit)
-│   ├── .env.example            ← template for teammates
-│   ├── documents/              ← place your PDFs, TXTs, DOCXs, MDXs here
-│   ├── chat_history/           ← one JSON file per session (auto-created)
-│   ├── faiss.index             ← vector index (auto-generated, gitignored)
-│   ├── chunks.pkl              ← text chunks + metadata (auto-generated, gitignored)
-│   └── documents.hash          ← change detection hash (auto-generated, gitignored)
-└── frontend/
-    └── src/
-        ├── App.jsx             ← chat UI, sidebar, document panel
-        ├── App.css             ← all styles
-        └── index.js            ← React 18 entry point
+│   ├── Dockerfile
+│   └── .env.example              ← template for environment variables
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx               
+│   │   ├── App.css
+│   │   └── index.js
+│   ├── nginx.conf                ← Nginx config for the frontend container
+│   └── Dockerfile
+├── k8s/
+│   ├── namespace.yaml
+│   ├── secret.template.yaml      
+│   ├── Config-maps/
+│   │   └── config-map.yaml
+│   ├── Volumes/
+│   │   └── PVC.yaml              ← faiss-store, chat-history, documents, model
+│   ├── Deployment/
+│   │   ├── deployment-backend.yaml   
+│   │   └── deployment-frontend.yaml
+│   ├── Services/
+│   │   ├── backend-service.yaml
+│   │   ├── frontend-service.yaml
+│   │   └── ingress-nginx-service-patch.yaml
+│   ├── Ingress/
+│   │   └── ingress.yaml
+│   ├── HPA/
+│   │   └── hpa.yaml
+│   ├── MetalLB/
+│   │   └── metallb-config.yaml
+│   ├── NetworkPolicy/
+│   │   └── network-policy.yaml
+│   ├── PodDisruptionBudget/
+│   │   └── pdb.yaml
+│   └── Monitoring/
+│       ├── prometheus-grafana-values.yaml
+│       └── gyaan-bhandar-dashboard.json
+└── .github/
+    └── workflows/
+        ├── ci.yml
+        └── cd.yml
 ```
 
 ---
 
-## Backend Setup
-
-### 1. Environment Variables
-
-Create `backend/.env`:
+## Architecture
 
 ```
-GROQ_API_KEY=your_groq_api_key_here
-MODEL_PATH=path/to/all-MiniLM-L6-v2
+                         ┌─────────────────────────────────────────┐
+                         │           VMware / Bare-metal            │
+                         │                                          │
+  Browser ──────────────►│  MetalLB IP (192.168.1.240)             │
+                         │         │                                │
+                         │  ┌──────▼──────────────┐                │
+                         │  │  NGINX Ingress       │                │
+                         │  │  Controller          │                │
+                         │  └──────┬───────────────┘                │
+                         │         │                                │
+                         │    /    │    /api/*                      │
+                         │  ┌──────▼──┐   ┌────────────────────┐   │
+                         │  │Frontend │   │ Backend            │   │
+                         │  │ Service │   │ Service            │   │
+                         │  └──────┬──┘   └─────────┬──────────┘   │
+                         │         │                 │              │
+                         │  ┌──────▼──┐   ┌─────────▼──────────┐   │
+                         │  │React    │   │ Flask + FAISS       │   │
+                         │  │ Pod(s)  │   │ Pod(s)             │   │
+                         │  │HPA:1-3  │   │ HPA: 1-5           │   │
+                         │  └─────────┘   └─────────┬──────────┘   │
+                         │                           │              │
+                         │               ┌───────────▼───────────┐  │
+                         │               │  PersistentVolumes     │  │
+                         │               │  - faiss-store-pvc     │  │
+                         │               │  - documents-pvc       │  │
+                         │               │  - chat-history-pvc    │  │
+                         │               │  - model-pvc           │  │
+                         │               └───────────────────────┘  │
+                         │                                          │
+                         │  ┌────────────────────────────────────┐  │
+                         │  │  monitoring namespace              │  │
+                         │  │  Prometheus · Grafana · Alertmgr   │  │
+                         │  └────────────────────────────────────┘  │
+                         └─────────────────────────────────────────┘
 ```
 
-> A `backend/.env.example` with placeholder values is committed to the repo so teammates know which variables are needed.
+**Request flow:**
+1. Browser hits `http://gyaan-bhandar.test` → MetalLB routes to NGINX Ingress Controller
+2. NGINX routes `/` → frontend Service → React pod (serves static files)
+3. React makes API calls to `gyaan-bhandar.test/api/*` → NGINX strips `/api` prefix → backend Service → Flask pod
+4. Flask queries FAISS index (on PVC), calls Groq API, returns answer
 
-### 2. Install Dependencies
+---
+
+## Local Development
+
+### Backend
 
 ```bash
 cd backend
 pip install -r requirements.txt
-```
 
-### 3. Add Documents
+# Create .env from template
+cp .env.example .env
+# Fill in GROQ_API_KEY, MODEL_PATH
 
-Place your documents in `backend/documents/`. Supported formats:
-
-- `.pdf` — PDF files
-- `.txt` — plain text
-- `.docx` — Word documents
-- `.mdx` — MDX files (useful for Terraform / Hashicorp docs)
-
-### 4. Run
-
-```bash
 python app.py
 ```
 
-**First run:** Parses all files in `documents/`, builds the FAISS index, and saves `faiss.index`, `chunks.pkl`, and `documents.hash` to disk.
-
-**Subsequent runs:** Detects whether documents have changed using a hash. If unchanged, loads the saved index instantly. If changed (new upload or deletion), rebuilds automatically.
-
----
-
-## Frontend Setup
-
-### 1. Install and Run
+### Frontend
 
 ```bash
 cd frontend
 npm install
-npm start
+npm start     # runs at http://localhost:3000
 ```
 
-The app runs at `http://localhost:3000`. Make sure the Flask backend is running on port 5000.
+> The frontend dev server proxies API calls to `http://localhost:5000` via the `REACT_APP_API_BASE` env var fallback.
 
-### 2. Dependencies
+---
+
+## Kubernetes Deployment
+
+> **Environment:** K3s on VMware (or any bare-metal Linux node). No cloud provider required.
+
+### Prerequisites
+
+Install the following on your node before deploying:
+
+#### 1. K3s
+```bash
+curl -sfL https://get.k3s.io | sh -
+# Disable Traefik (we use NGINX instead)
+echo "disable: [traefik]" | sudo tee /etc/rancher/k3s/config.yaml
+sudo systemctl restart k3s
+```
+
+Make kubectl accessible without sudo:
+```bash
+sudo chmod 644 /etc/rancher/k3s/k3s.yaml
+echo 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml' >> ~/.bashrc
+source ~/.bashrc
+```
+
+Persist permissions across reboots:
+```bash
+sudo tee /etc/systemd/system/k3s.service.d/kubeconfig-permissions.conf << 'EOF'
+[Service]
+ExecStartPost=/bin/chmod 644 /etc/rancher/k3s/k3s.yaml
+EOF
+sudo systemctl daemon-reload
+```
+
+#### 2. Helm
+```bash
+sudo snap install helm --classic
+```
+
+#### 3. NGINX Ingress Controller
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/baremetal/deploy.yaml
+```
+
+#### 4. Metrics Server (required for HPA)
+```bash
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+```
+
+#### 5. MetalLB (bare-metal LoadBalancer)
+```bash
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
+kubectl wait --namespace metallb-system \
+  --for=condition=ready pod \
+  --selector=app=metallb \
+  --timeout=90s
+```
+
+Edit `k8s/MetalLB/metallb-config.yaml` — set the IP range to an unused range on your LAN:
+```yaml
+spec:
+  addresses:
+    - 192.168.1.240-192.168.1.240   # single pinned IP
+```
+
+Then apply:
+```bash
+kubectl apply -f k8s/MetalLB/metallb-config.yaml
+```
+
+Patch the NGINX Ingress Controller Service to use MetalLB:
+```bash
+kubectl apply -f k8s/Services/ingress-nginx-service-patch.yaml
+# Verify external IP assigned:
+kubectl get svc -n ingress-nginx
+```
+
+#### 6. Prometheus + Grafana
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+kubectl create namespace monitoring
+helm install kube-prometheus prometheus-community/kube-prometheus-stack \
+  --namespace monitoring \
+  --values k8s/Monitoring/prometheus-grafana-values.yaml
+```
+
+#### 7. DNS / hosts entry
+
+Add to `/etc/hosts` on the node **and** any machine that needs to access the app:
+```
+192.168.1.240   gyaan-bhandar.test
+```
+
+
+---
+
+### Infrastructure Setup
+
+These resources are created **once** and are not managed by the CI/CD pipeline. They persist across deployments.
 
 ```bash
-npm install react-markdown remark-gfm
+# 1. Namespace
+kubectl apply -f k8s/namespace.yaml
+
+# 2. Secrets 
+cp k8s/secret.template.yaml k8s/secrets.yaml
+nano k8s/secrets.yaml   # add GROQ_API_KEY, GITHUB_TOKEN, GITHUB_REPO
+kubectl apply -f k8s/secrets.yaml
+
+# 3. ConfigMap
+kubectl apply -f k8s/Config-maps/config-map.yaml
+
+# 4. PersistentVolumeClaims
+kubectl apply -f k8s/Volumes/PVC.yaml
 ```
 
-### 3. `src/index.js` (React 18)
-
-Make sure it uses the React 18 `createRoot` API:
-
-```js
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
+Verify:
+```bash
+kubectl get pvc -n gyaan-bhandar
 ```
+
+> **Note:** The `all-MiniLM-L6-v2` model (~90MB) is downloaded automatically by an init container on first pod start. Internet access is required on the node for this. Subsequent restarts skip the download as the model is cached in the PVC.
+
+---
+
+### Application Deployment
+
+```bash
+kubectl apply -f k8s/Deployment/
+kubectl apply -f k8s/Services/
+kubectl apply -f k8s/Ingress/
+kubectl apply -f k8s/HPA/
+kubectl apply -f k8s/PodDisruptionBudget/
+kubectl apply -f k8s/NetworkPolicy/
+```
+
+Watch pods come up (init container runs first, then main container):
+```bash
+kubectl get pods -n gyaan-bhandar -w
+```
+
+---
+
+### Verify Deployment
+
+```bash
+# All pods healthy
+kubectl get pods -n gyaan-bhandar
+
+# Services and Ingress
+kubectl get svc,ingress -n gyaan-bhandar
+
+# HPA status
+kubectl get hpa -n gyaan-bhandar
+
+# Test backend directly
+curl http://gyaan-bhandar.test/api/health
+# Expected: {"chunks_loaded":0,"documents":0,"status":"ok"}
+
+# Open in browser
+http://gyaan-bhandar.test
+```
+
+---
+
+## CI/CD Pipeline
+
+The pipeline uses a **self-hosted GitHub Actions runner** on the same node as the cluster.
+
+```
+Push to any branch                Push to main
+        │                               │
+        ▼                               ▼
+  ┌─────────────┐               ┌──────────────┐
+  │   ci.yml    │   on success  │   cd.yml     │
+  │             │──────────────►│              │
+  │ • lint      │               │ • kubectl    │
+  │ • build     │               │   set image  │
+  │ • trivy     │               │ • rollout    │
+  │ • push SHA  │               │   status     │
+  └─────────────┘               └──────────────┘
+```
+
+### Runner Setup
+
+```bash
+# Create a dedicated low-privilege user for the runner
+sudo useradd -m -s /bin/bash github-runner
+sudo usermod -aG docker github-runner
+
+# Copy kubeconfig so runner can access the cluster
+sudo mkdir -p /home/github-runner/.kube
+sudo cp ~/.kube/config /home/github-runner/.kube/config
+sudo chown -R github-runner:github-runner /home/github-runner/.kube
+
+# Install runner — follow exact commands from:
+# GitHub repo → Settings → Actions → Runners → New self-hosted runner
+sudo su - github-runner
+# paste GitHub-provided commands here
+```
+
+### GitHub Secrets Required
+
+| Secret | Value |
+|---|---|
+| `DOCKERHUB_USERNAME` | Your DockerHub username |
+| `DOCKERHUB_TOKEN` | DockerHub access token (not password) |
+
+
+### Image Tagging
+
+Images are tagged with the Git SHA, not `latest`:
+```
+kpkm25/gyan-bhandar-backend:a3f2c1d
+kpkm25/gyan-bhandar-frontend:a3f2c1d
+```
+
+This ensures every deployment is reproducible and rollbacks are trivial:
+```bash
+# Rollback to a previous SHA
+kubectl set image deployment/gyan-bhandar-backend \
+  gyan-bhandar-backend=kpkm25/gyan-bhandar-backend:<previous-sha> \
+  -n gyaan-bhandar
+```
+
+### Runner Security Considerations
+
+- Runner executes as `github-runner` user, not root
+- Workflows only trigger on `push` to protected branches — never on PRs from forks
+- Runner has scoped kubeconfig access limited to the `gyaan-bhandar` namespace
+
+
+---
+
+## Monitoring
+
+Grafana is accessible at `http://<node-ip>:32000`
+Default credentials: `admin / admin`
+
+### Available Dashboards
+
+- **Kubernetes Overview** (Grafana ID 15760) — cluster-wide pod health, CPU, memory
+- **Gyaan Bhandar** (custom) — request rate, p95 latency, replica count, memory per pod
+
+### Import Custom Dashboard
+
+1. Open Grafana → Dashboards → Import
+2. Upload `k8s/Monitoring/gyaan-bhandar-dashboard.json`
+
+### Key Metrics
+
+| Metric | Query |
+|---|---|
+| Request rate | `rate(flask_http_request_total{namespace="gyaan-bhandar"}[5m])` |
+| p95 latency | `histogram_quantile(0.95, rate(flask_http_request_duration_seconds_bucket[5m]))` |
+| Backend replicas | `kube_deployment_status_replicas_available{deployment="gyan-bhandar-backend"}` |
+| Memory per pod | `container_memory_working_set_bytes{namespace="gyaan-bhandar"}` |
+
+> **Note:** Flask metrics require `prometheus-flask-exporter` in `requirements.txt` and a `/metrics` endpoint in `app.py`. The backend deployment is already annotated for Prometheus scraping.
 
 ---
 
@@ -141,7 +456,7 @@ root.render(<App />);
 - Hash-based change detection — index only rebuilds when documents actually change
 
 ### Chat & Sessions
-- Full chat history stored as JSON files in `backend/chat_history/`
+- Full chat history stored as JSON on a PVC
 - Sidebar lists all past sessions — click any to restore the full conversation
 - Sessions are auto-titled from the first message
 - Each AI response shows the retrieved source chunks with page numbers
@@ -155,30 +470,15 @@ Later runs:   hash match → load from disk (instant)
 New file:     hash mismatch → rebuild index automatically
 ```
 
-To force a full rebuild manually:
-
-```bash
-# Via API
-curl -X POST http://localhost:5000/rebuild-index
-
-# Or delete the generated files and restart
-del backend\faiss.index backend\chunks.pkl backend\documents.hash   # Windows
-rm backend/faiss.index backend/chunks.pkl backend/documents.hash    # Mac/Linux
-```
-
 ---
 
 ## Importing Terraform Docs
 
-The Terraform docs are at [github.com/hashicorp/web-unified-docs](https://github.com/hashicorp/web-unified-docs) under `content/terraform-docs-common`. Use sparse checkout to avoid downloading the entire repo:
-
 ```bash
-# Sparse clone — only pulls the folder you need
 git clone --filter=blob:none --sparse https://github.com/hashicorp/web-unified-docs.git
 cd web-unified-docs
 git sparse-checkout set content/terraform-docs-common
 
-# Copy MDX files into your documents folder (subfolder name used as prefix to avoid duplicates)
 find content/terraform-docs-common -name "*.mdx" | while read f; do
   relative="${f#content/terraform-docs-common/}"
   newname="${relative//\//_}"
@@ -186,65 +486,7 @@ find content/terraform-docs-common -name "*.mdx" | while read f; do
 done
 ```
 
-> **Note:** The first index build may take several minutes if there are hundreds of MDX files. Subsequent restarts load instantly from the saved index.
-
-To check for duplicate filenames before copying:
-
-```bash
-# Count duplicates
-find content/terraform-docs-common -name "*.mdx" | xargs -I {} basename {} | sort | uniq -d | wc -l
-
-# See duplicate names
-find content/terraform-docs-common -name "*.mdx" | xargs -I {} basename {} | sort | uniq -d
-
-# See full paths of all duplicates
-find content/terraform-docs-common -name "*.mdx" | xargs -I {} basename {} | sort | uniq -d | while read name; do
-  find content/terraform-docs-common -name "$name"
-done
-```
-
----
-
-## Git & Deployment
-
-### `.gitignore`
-
-```gitignore
-# Secrets
-backend/.env
-
-# Generated index files (rebuilt automatically on first run)
-backend/faiss.index
-backend/chunks.pkl
-backend/documents.hash
-
-# Document uploads (kept locally)
-backend/documents/
-
-# Chat history (local only)
-backend/chat_history/
-
-# Python
-__pycache__/
-*.pyc
-.venv/
-venv/
-
-# Node
-frontend/node_modules/
-frontend/build/
-
-# OS
-.DS_Store
-Thumbs.db
-```
-
-### First-Time Setup on a New Machine
-
-1. Copy `.env.example` to `.env` and fill in your keys
-2. Place documents in `backend/documents/`
-3. Run `python app.py` — the index builds automatically on first run
-4. In a separate terminal: `cd frontend && npm install && npm start`
+> First index build with many MDX files may take several minutes. Subsequent restarts load from the saved index instantly.
 
 ---
 
@@ -252,8 +494,12 @@ Thumbs.db
 
 | Problem | Fix |
 |---|---|
-| Backend offline (red dot in UI) | Check that `python app.py` is running on port 5000 |
-| Index not updating after upload | Delete `documents.hash` and restart the backend |
-| Duplicate MDX filenames | Use the prefix-copy script in the Terraform Docs section above |
-| Slow first startup with many MDX files | Expected — FAISS index builds once and loads instantly on all subsequent runs |
-| Code blocks not rendering | Ensure `remark-gfm` is installed and passed as `remarkPlugins={[remarkGfm]}` |
+| `kubectl` permission denied on k3s.yaml | `sudo chmod 644 /etc/rancher/k3s/k3s.yaml` |
+| Backend pod stuck in `Init:0/1` | Check internet access — init container downloads model from HuggingFace |
+| 502 Bad Gateway from Ingress | Check NetworkPolicy allows `10.42.0.0/16` CIDR; check backend pod is `1/1 Running` |
+| HPA scaling unexpectedly | Check `kubectl describe hpa -n gyaan-bhandar` for metric errors; Metrics Server may still be starting |
+| MetalLB IP not assigned (`<pending>`) | Verify IP range doesn't conflict with router DHCP; check `kubectl logs -n metallb-system` |
+| Groq API key invalid | Run `kubectl exec -n gyaan-bhandar deploy/gyan-bhandar-backend -- python3 -c "import os; print(repr(os.getenv('groq_key')))"` — check for trailing whitespace |
+| Frontend using `localhost:5000` | Image was built without `--build-arg REACT_APP_API_BASE=...`; rebuild with the arg |
+| Backend offline (red dot in UI) | Check `kubectl logs -n gyaan-bhandar deploy/gyan-bhandar-backend` |
+| Index not updating after upload | The documents PVC may be full; check `kubectl exec` into pod and run `df -h /app/documents` |

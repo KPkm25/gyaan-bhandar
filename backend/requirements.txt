@@ -8,3 +8,4 @@ python-docx
 PyPDF2
 python-dotenv
 werkzeug
+prometheus-flask-exporter
