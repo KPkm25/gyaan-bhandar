@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
@@ -14,16 +14,27 @@ import glob
 import json
 import uuid
 import hashlib
+import time
 import PyPDF2
 from sentence_transformers import SentenceTransformer
 from prometheus_flask_exporter import PrometheusMetrics
+
+from logger import get_logger
+from middleware import register_middleware
+from metrics import (
+    rag_queries_total, failed_queries_total, low_confidence_total,
+    retrieval_latency_seconds, llm_latency_seconds, total_query_latency_seconds,
+)
+
+log = get_logger("gyaan_bhandar")
 
 load_dotenv(override=False)
 
 app = Flask(__name__)
 CORS(app)
-metrics = PrometheusMetrics(app)
+register_middleware(app)
 
+metrics = PrometheusMetrics(app)
 metrics.info('gyaan_bhandar_info', 'Gyaan Bhandar backend', version='1.0.0')
 
 
@@ -34,7 +45,7 @@ BASE_URL        = "https://api.groq.com/openai/v1"
 GROQ_HEADERS    = {"Authorization": f"Bearer {API_KEY}"}
 
 GITHUB_TOKEN    = os.getenv("github_token")
-GITHUB_REPO     = os.getenv("github_repo")  
+GITHUB_REPO     = os.getenv("github_repo")
 
 DOCUMENTS_FOLDER      = os.getenv("DOCUMENTS_PATH")
 HISTORY_FOLDER   = os.getenv("CHAT_HISTORY_PATH", "/app/chat_history")
@@ -49,12 +60,13 @@ LOW_CONFIDENCE_THRESHOLD = 0.35
 
 os.makedirs(DOCUMENTS_FOLDER, exist_ok=True)
 os.makedirs(HISTORY_FOLDER, exist_ok=True)
-os.makedirs(FAISS_STORE_PATH, exist_ok=True) 
+os.makedirs(FAISS_STORE_PATH, exist_ok=True)
 
 # ── Load model ────────────────────────────────────────────────
-print("Loading embedding model...")
+log.info("model_loading_started", extra={"model_path": MODEL_PATH})
 model = SentenceTransformer(MODEL_PATH)
-print("Model loaded.")
+log.info("model_loading_finished", extra={"model_path": MODEL_PATH})
+
 
 # ── File readers ──────────────────────────────────────────────
 def read_txt(file_path):
@@ -146,11 +158,11 @@ def parse_all_documents():
         glob.glob(f"{DOCUMENTS_FOLDER}/*.mdx")
     )
     if not files:
-        print("No documents found in documents/ folder.")
+        log.info("no_documents_found", extra={"folder": DOCUMENTS_FOLDER})
         return []
     for filepath in files:
         ext = filepath.rsplit(".", 1)[-1].lower()
-        print(f"  Parsing: {os.path.basename(filepath)}")
+        log.info("parsing_document", extra={"filename": os.path.basename(filepath)})
         if ext == "pdf":
             all_sentences.extend(read_pdf(filepath))
         elif ext == "txt":
@@ -184,14 +196,14 @@ def load_or_build_index():
         with open(HASH_PATH) as f:
             saved_hash = f.read().strip()
         if saved_hash == current_hash:
-            print("Documents unchanged — loading existing index.")
+            log.info("index_unchanged_loading_existing")
             faiss_index = faiss.read_index(INDEX_PATH)
             with open(CHUNKS_PATH, "rb") as f:
                 loaded_chunks = pickle.load(f)
-            print(f"Loaded {len(loaded_chunks)} chunks.")
+            log.info("index_loaded", extra={"chunks": len(loaded_chunks)})
             return faiss_index, loaded_chunks
 
-    print("Building new index...")
+    log.info("index_build_started")
     sentences = parse_all_documents()
     if not sentences:
         return None, []
@@ -211,7 +223,7 @@ def load_or_build_index():
         f.write(current_hash)
 
     doc_count = len(set(c["source"] for c in loaded_chunks))
-    print(f"Index built: {len(loaded_chunks)} chunks from {doc_count} file(s).")
+    log.info("index_build_finished", extra={"chunks": len(loaded_chunks), "documents": doc_count})
     return faiss_index, loaded_chunks
 
 index, chunks = load_or_build_index()
@@ -281,7 +293,7 @@ def ask_groq(query, retrieved_chunks, model_name="llama-3.1-8b-instant"):
 # ── GitHub issue creation ─────────────────────────────────────
 def create_github_issue(query, confidence, retrieved):
     if not GITHUB_TOKEN or not GITHUB_REPO:
-        print("GitHub not configured — skipping issue creation.")
+        log.info("github_issue_skipped", extra={"reason": "not_configured"})
         return None
 
     sources = list(set(c["source"] for c in retrieved))
@@ -307,15 +319,16 @@ def create_github_issue(query, confidence, retrieved):
             "labels": ["documentation", "auto-generated"]
         },
         verify=False
-
     )
 
     if response.status_code == 201:
         issue_url = response.json().get("html_url")
-        print(f"GitHub issue created: {issue_url}")
+        log.info("github_issue_created", extra={"issue_url": issue_url})
         return issue_url
     else:
-        print(f"GitHub issue creation failed: {response.status_code} {response.text}")
+        log.error("github_issue_failed", extra={
+            "status_code": response.status_code, "response": response.text
+        })
         return None
 
 # ── Chat history helpers ──────────────────────────────────────
@@ -326,9 +339,12 @@ def session_path(session_id):
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({
-        "status": "ok",
+        "status": "healthy",
+        "embedding_model": "loaded" if model else "not_loaded",
+        "faiss_index": "loaded" if index is not None else "not_loaded",
+        "groq": "configured" if API_KEY else "missing_api_key",
         "chunks_loaded": len(chunks),
-        "documents": len(set(c["source"] for c in chunks)) if chunks else 0
+        "documents": len(set(c["source"] for c in chunks)) if chunks else 0,
     })
 
 @app.route("/rebuild-index", methods=["POST"])
@@ -378,7 +394,7 @@ def upload():
     filename = secure_filename(file.filename)
     save_path = os.path.join(DOCUMENTS_FOLDER, filename)
     file.save(save_path)
-    print(f"Uploaded: {filename}")
+    log.info("file_uploaded", extra={"filename": filename})
 
     if os.path.exists(HASH_PATH):
         os.remove(HASH_PATH)
@@ -404,27 +420,33 @@ def delete_document(filename):
     index, chunks = load_or_build_index()
     return jsonify({"status": "deleted", "total_chunks": len(chunks)})
 
-# ── Routes: Query ─────────────────────────────────────────────
-@app.route("/query", methods=["POST"])
-def query():
-    data = request.get_json()
-    user_query = data.get("query", "").strip()
-    session_id = data.get("session_id")
-    force_answer = data.get("force_answer", False)  # ← user can override
+# ── Query handling (shared by /query and /ask) ────────────────
+def _handle_query(user_query, session_id, force_answer):
+    request_id = getattr(g, "request_id", "unknown")
+    start = time.perf_counter()
 
     if not user_query:
-        return jsonify({"error": "Query cannot be empty."}), 400
+        failed_queries_total.labels(reason="empty_query").inc()
+        return jsonify({"error": "Query cannot be empty.", "request_id": request_id}), 400
     if not chunks:
-        return jsonify({"error": "No documents loaded. Please upload a file first."}), 400
+        failed_queries_total.labels(reason="no_documents").inc()
+        return jsonify({"error": "No documents loaded. Please upload a file first.", "request_id": request_id}), 400
 
-    retrieved, confidence = search_docs(user_query, k=3)
+    rag_queries_total.inc()
+
+    retrieval_start = time.perf_counter()
+    with retrieval_latency_seconds.time():
+        retrieved, confidence = search_docs(user_query, k=3)
+    retrieval_ms = round((time.perf_counter() - retrieval_start) * 1000, 2)
+
     is_low_confidence = confidence < LOW_CONFIDENCE_THRESHOLD
+    if is_low_confidence:
+        low_confidence_total.inc()
 
     # If low confidence and user hasn't forced an answer — skip LLM
     if is_low_confidence and not force_answer:
         issue_url = create_github_issue(user_query, confidence, retrieved)
 
-        # Summarise what the closest chunks ARE about
         sources = list(set(c["source"] for c in retrieved))
         source_list = "\n".join(f"- `{s}`" for s in sources)
 
@@ -437,6 +459,18 @@ def query():
             f"- **Ask anyway** and I'll generate a best-effort answer from the available context"
         )
 
+        total_ms = round((time.perf_counter() - start) * 1000, 2)
+        total_query_latency_seconds.observe(total_ms / 1000)
+        log.info("query_completed_low_confidence", extra={
+            "request_id": request_id,
+            "question_length": len(user_query),
+            "retrieved_chunks": len(retrieved),
+            "confidence": confidence,
+            "retrieval_time_ms": retrieval_ms,
+            "total_time_ms": total_ms,
+            "status": "low_confidence",
+        })
+
         return jsonify({
             "query": user_query,
             "answer": answer,
@@ -444,11 +478,15 @@ def query():
             "confidence": confidence,
             "low_confidence": True,
             "issue_url": issue_url,
-            "can_force": True   # ← tells frontend to show the "Ask anyway" button
+            "can_force": True,
+            "request_id": request_id
         })
 
     # Normal flow — call Groq
-    answer = ask_groq(user_query, retrieved)
+    llm_start = time.perf_counter()
+    with llm_latency_seconds.time():
+        answer = ask_groq(user_query, retrieved)
+    llm_ms = round((time.perf_counter() - llm_start) * 1000, 2)
     issue_url = None
 
     # Save to session
@@ -471,6 +509,19 @@ def query():
             with open(path, "w") as f:
                 json.dump(session, f, indent=2)
 
+    total_ms = round((time.perf_counter() - start) * 1000, 2)
+    total_query_latency_seconds.observe(total_ms / 1000)
+    log.info("query_completed", extra={
+        "request_id": request_id,
+        "question_length": len(user_query),
+        "retrieved_chunks": len(retrieved),
+        "confidence": confidence,
+        "retrieval_time_ms": retrieval_ms,
+        "llm_time_ms": llm_ms,
+        "total_time_ms": total_ms,
+        "status": "success",
+    })
+
     return jsonify({
         "query": user_query,
         "answer": answer,
@@ -478,61 +529,27 @@ def query():
         "confidence": confidence,
         "low_confidence": False,
         "issue_url": None,
-        "can_force": False
+        "can_force": False,
+        "request_id": request_id
     })
+
+# ── Routes: Query ─────────────────────────────────────────────
+@app.route("/query", methods=["POST"])
+def query():
     data = request.get_json()
     user_query = data.get("query", "").strip()
     session_id = data.get("session_id")
+    force_answer = data.get("force_answer", False)  # ← user can override
+    return _handle_query(user_query, session_id, force_answer)
 
-    if not user_query:
-        return jsonify({"error": "Query cannot be empty."}), 400
-    if not chunks:
-        return jsonify({"error": "No documents loaded. Please upload a file first."}), 400
-
-    retrieved, confidence = search_docs(user_query, k=3)
-    answer = ask_groq(user_query, retrieved)
-
-    # Flag low confidence and prepend warning to answer
-    is_low_confidence = confidence < LOW_CONFIDENCE_THRESHOLD
-    if is_low_confidence:
-        answer = (
-            f"> ⚠️ **Low confidence response** (score: {confidence:.0%}) — "
-            f"the documentation may not cover this topic well.\n\n{answer}"
-        )
-
-    # Auto-create GitHub issue for low confidence queries
-    issue_url = None
-    if is_low_confidence:
-        issue_url = create_github_issue(user_query, confidence, retrieved)
-
-    # Save to session history
-    if session_id:
-        path = session_path(session_id)
-        if os.path.exists(path):
-            with open(path) as f:
-                session = json.load(f)
-            if session["title"] == "New Chat":
-                session["title"] = user_query[:45] + ("…" if len(user_query) > 45 else "")
-            session["messages"].append({
-                "user": user_query,
-                "assistant": answer,
-                "chunks": retrieved,
-                "confidence": confidence,
-                "issue_url": issue_url,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-            session["updated_at"] = datetime.now(timezone.utc).isoformat()
-            with open(path, "w") as f:
-                json.dump(session, f, indent=2)
-
-    return jsonify({
-        "query": user_query,
-        "answer": answer,
-        "chunks": retrieved,
-        "confidence": confidence,
-        "low_confidence": is_low_confidence,
-        "issue_url": issue_url
-    })
+@app.route("/ask", methods=["POST"])
+def ask():
+    """Spec-compliant alias required by the assignment: POST /ask {'question': '...'}"""
+    data = request.get_json(force=True, silent=True) or {}
+    question = data.get("question", "").strip()
+    session_id = data.get("session_id")
+    force_answer = data.get("force_answer", False)
+    return _handle_query(question, session_id, force_answer)
 
 # ── Routes: Chat Sessions ─────────────────────────────────────
 @app.route("/sessions", methods=["GET"])
