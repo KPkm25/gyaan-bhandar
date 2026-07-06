@@ -347,6 +347,22 @@ def health():
         "documents": len(set(c["source"] for c in chunks)) if chunks else 0,
     })
 
+@app.route("/live")
+def live():
+    return "ok", 200
+
+@app.route("/ready", methods=["GET"])
+def ready():
+    return jsonify({
+        "status": "ok",
+        "chunks_loaded": len(chunks),
+        "documents": len(set(c["source"] for c in chunks)) if chunks else 0
+    })
+
+@app.route("/startup")
+def startup():
+    return "ok", 200
+
 @app.route("/rebuild-index", methods=["POST"])
 def rebuild_index():
     global index, chunks
