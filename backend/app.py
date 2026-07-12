@@ -162,7 +162,7 @@ def parse_all_documents():
         return []
     for filepath in files:
         ext = filepath.rsplit(".", 1)[-1].lower()
-        log.info("parsing_document", extra={"filename": os.path.basename(filepath)})
+        log.info("parsing_document", extra={"document_filename": os.path.basename(filepath)})
         if ext == "pdf":
             all_sentences.extend(read_pdf(filepath))
         elif ext == "txt":
